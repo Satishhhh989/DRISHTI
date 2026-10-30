@@ -103,4 +103,29 @@ describe("Frontend Stores", () => {
     ui.resetCamera();
     expect(useUIStore.getState().cameraResetTrigger).toBe(1);
   });
+
+  it("applies progressive events to store state via applyEvent", () => {
+    const store = useSceneStore.getState();
+    store.setLocalPhoto("blob:test", 800, 600, "test.jpg");
+    const sceneId = useSceneStore.getState().currentScene!.id;
+
+    useSceneStore.getState().applyEvent({
+      eventId: "ev-1",
+      jobId: "job-1",
+      sceneId: sceneId,
+      eventType: "progress_updated",
+      timestamp: new Date().toISOString(),
+      sequenceNumber: 1,
+      stageIdentifier: "instance_segmentation",
+      status: "running",
+      progress: 0.65,
+      message: "1 of 2 masks ready",
+    });
+
+    const updated = useSceneStore.getState();
+    expect(updated.lastSequenceNumber).toBe(1);
+    expect(updated.analysisProgress).toBe(0.65);
+    expect(updated.currentStageMessage).toBe("1 of 2 masks ready");
+    expect(updated.stages.instance_segmentation.status).toBe("running");
+  });
 });

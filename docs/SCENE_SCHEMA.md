@@ -202,9 +202,20 @@ DRISHTI provides multiple visualization layers in the viewport:
 
 Scene representations tracked in `SceneRepresentations`:
 - `photo`: `ready` when an image is loaded.
-- `spatialPhoto`: `ready` when depth estimation has successfully computed.
+- `spatial_photo`: `ready` when depth estimation has successfully computed.
 - `wireframe`: `unavailable` (Phase 06).
 - `solid3d`: `unavailable` (Phase 06/07).
+
+### 6.1 Representation Availability Model (`computeRepresentationAvailability`)
+
+Availability of each viewport visualization mode is dynamically calculated using `computeRepresentationAvailability(scene, stage, isAnalyzing)` based on actual asset existence:
+- **`original`**: `ready` if source image asset is loaded.
+- **`detection`**: `ready` if $\ge 1$ person entity exists; `processing` if detection running; otherwise `pending` or `unavailable`.
+- **`segmentation`**: `ready` if $\ge 1$ entity has a persisted mask asset; `processing` if segmentation running; otherwise `pending` or `unavailable`.
+- **`depth`**: `ready` if normalized grayscale depth visualization asset is present; `processing` if depth model running; `failed` if depth failed; otherwise `pending` or `unavailable`.
+- **`spatial_photo`**: `ready` if both source photo AND depth map are ready; `processing` if depth/spatial preparation running; `failed` if depth failed; otherwise `unavailable`.
+- **`wireframe`**: `unavailable` (honest placeholder for Phase 06).
+- **`solid3d`**: `unavailable` (honest placeholder for Phase 06/07).
 
 ---
 

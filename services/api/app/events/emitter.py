@@ -1,12 +1,15 @@
-"""PHOTO → 3D ENGINE - Processing Event Emitter
+"""DRISHTI - Processing Event Emitter
+Version 1.2.0 (Phase 04: Progressive Engine & Real-Time Event Stream)
 
-Publishes typed, strictly-sequenced processing events and provides
-reconciliation capabilities for reconnecting clients.
+Publishes typed, strictly-sequenced processing events, maintains bounded retention,
+and provides live SSE pub/sub streaming and reconciliation for reconnecting clients.
 """
 
-import uuid
+import asyncio
 from datetime import datetime, timezone
-from typing import Dict, List, Optional
+from typing import AsyncGenerator, Dict, List, Optional, Set
+import uuid
+
 from app.core.logging import logger
 from app.schemas.events import (
     AssetReference,
@@ -17,13 +20,17 @@ from app.schemas.events import (
     StructuredError,
 )
 
+MAX_EVENTS_PER_JOB = 500
+
 
 class EventEmitter:
     def __init__(self):
-        # job_id -> list of ProcessingEvent
+        # job_id -> list of ProcessingEvent (bounded FIFO)
         self._event_store: Dict[str, List[ProcessingEvent]] = {}
         # job_id -> sequence counter
         self._sequences: Dict[str, int] = {}
+        # job_id -> set of active subscriber queues
+        self._subscribers: Dict[str, Set[asyncio.Queue]] = {}
 
     def emit(
         self,
@@ -38,7 +45,7 @@ class EventEmitter:
         asset_reference: Optional[AssetReference] = None,
         error: Optional[StructuredError] = None,
     ) -> ProcessingEvent:
-        """Creates and stores a sequenced event for a job."""
+        """Creates, stores, and broadcasts a sequenced event for a job."""
         current_seq = self._sequences.get(job_id, 0) + 1
         self._sequences[job_id] = current_seq
 
@@ -60,11 +67,26 @@ class EventEmitter:
 
         if job_id not in self._event_store:
             self._event_store[job_id] = []
-        self._event_store[job_id].append(event)
+        
+        # Bounded retention: prevent unbounded memory consumption
+        store = self._event_store[job_id]
+        store.append(event)
+        if len(store) > MAX_EVENTS_PER_JOB:
+            # Drop oldest events beyond boundary
+            self._event_store[job_id] = store[-MAX_EVENTS_PER_JOB:]
 
         logger.info(
             f"Event [{current_seq}] job={job_id} stage={stage_identifier} type={event_type} status={status}"
         )
+
+        # Broadcast event to all live SSE subscriber queues
+        subscribers = self._subscribers.get(job_id, set())
+        for q in list(subscribers):
+            try:
+                q.put_nowait(event)
+            except Exception as e:
+                logger.debug(f"Failed to put event into subscriber queue: {e}")
+
         return event
 
     def get_events(
@@ -72,13 +94,60 @@ class EventEmitter:
         job_id: str,
         since_sequence: int = 0
     ) -> List[ProcessingEvent]:
-        """Returns all events for a job strictly greater than since_sequence."""
+        """Returns all stored events for a job strictly greater than since_sequence."""
         events = self._event_store.get(job_id, [])
         return [e for e in events if e.sequence_number > since_sequence]
 
     def get_latest_sequence(self, job_id: str) -> int:
         return self._sequences.get(job_id, 0)
 
+    async def subscribe(
+        self,
+        job_id: str,
+        since_sequence: int = 0,
+        keepalive_timeout: float = 15.0,
+    ) -> AsyncGenerator[ProcessingEvent, None]:
+        """Yields past events since since_sequence, then yields live incoming events until completion."""
+        queue: asyncio.Queue = asyncio.Queue()
+
+        if job_id not in self._subscribers:
+            self._subscribers[job_id] = set()
+        self._subscribers[job_id].add(queue)
+
+        try:
+            # 1. Replay historical events since requested sequence
+            past_events = self.get_events(job_id, since_sequence=since_sequence)
+            last_yielded_seq = since_sequence
+            for event in past_events:
+                last_yielded_seq = max(last_yielded_seq, event.sequence_number)
+                yield event
+                if event.event_type in ("job_completed", "job_cancelled"):
+                    return
+
+            # 2. Stream live incoming events from queue
+            while True:
+                try:
+                    event: ProcessingEvent = await asyncio.wait_for(
+                        queue.get(),
+                        timeout=keepalive_timeout,
+                    )
+                except asyncio.TimeoutError:
+                    # Timeout reached; continue loop to allow ping/heartbeat handling by consumer
+                    continue
+
+                if event.sequence_number > last_yielded_seq:
+                    last_yielded_seq = event.sequence_number
+                    yield event
+
+                    if event.event_type in ("job_completed", "job_cancelled"):
+                        break
+                    if event.event_type == "stage_failed" and event.status in ("failed", "cancelled"):
+                        break
+        finally:
+            if job_id in self._subscribers and queue in self._subscribers[job_id]:
+                self._subscribers[job_id].remove(queue)
+                if not self._subscribers[job_id]:
+                    del self._subscribers[job_id]
+
 
 event_emitter = EventEmitter()
-

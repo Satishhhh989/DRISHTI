@@ -22,6 +22,10 @@ export const UploadButton: React.FC<UploadButtonProps> = ({
   const setLocalPhoto = useSceneStore((state) => state.setLocalPhoto);
   const setScene = useSceneStore((state) => state.setScene);
   const setAnalysisState = useSceneStore((state) => state.setAnalysisState);
+  const applyEvent = useSceneStore((state) => state.applyEvent);
+  const reconcileAuthoritativeScene = useSceneStore(
+    (state) => state.reconcileAuthoritativeScene
+  );
   const setError = useUIStore((state) => state.setError);
   const setStatusNotice = useUIStore((state) => state.setStatusNotice);
 
@@ -44,48 +48,51 @@ export const UploadButton: React.FC<UploadButtonProps> = ({
         setStatusNotice("Uploading photograph to local storage...");
         const res = await apiClient.uploadPhoto(file);
         if (res.scene) {
+          const targetSceneId = res.scene.id;
           setScene(res.scene);
 
-          // 3. Automatically trigger Phase 02 person detection & segmentation
+          // 3. Automatically trigger multi-stage progressive analysis pipeline
           try {
-            setAnalysisState(true, "Analyzing photograph and generating spatial photo...", 0.1);
-            setStatusNotice("Running local neural networks (detection, segmentation, depth)...");
-            const job = await apiClient.triggerAnalysis(res.scene.id);
-
-            let completed = false;
-            let lastSeq = 0;
-            let iterations = 0;
-
-            while (!completed && iterations < 30) {
-              iterations++;
-              await new Promise((r) => setTimeout(r, 600));
-              try {
-                const eventData = await apiClient.getJobEvents(job.job_id, lastSeq);
-                if (eventData.events && eventData.events.length > 0) {
-                  for (const ev of eventData.events) {
-                    lastSeq = Math.max(lastSeq, ev.sequence_number);
-                    if (ev.message) {
-                      setAnalysisState(true, ev.message, ev.progress || 0.5);
-                      setStatusNotice(ev.message);
-                    }
-                    if (ev.event_type === "job_completed" || ev.event_type === "stage_failed") {
-                      completed = true;
-                    }
-                  }
-                }
-              } catch (e) {
-                // Ignore transient event poll error
-              }
-            }
-
-            const refreshed = await apiClient.getScene(res.scene.id);
-            setScene(refreshed);
-            setAnalysisState(false, null, 1.0);
-            setStatusNotice(
-              refreshed.entities.length > 0
-                ? `Analysis complete: ${refreshed.entities.length} people identified.`
-                : "Analysis complete: No people detected."
+            setAnalysisState(
+              true,
+              "Initializing progressive neural pipeline...",
+              0.05
             );
+            setStatusNotice("Running local neural networks (detection, segmentation, depth)...");
+            const job = await apiClient.triggerAnalysis(targetSceneId);
+            setAnalysisState(true, "Job accepted by engine", 0.08, job.job_id);
+
+            // 4. Stream real-time processing events via SSE with fallback
+            await new Promise<void>((resolve) => {
+              const unsubscribe = apiClient.subscribeToJobEvents(
+                job.job_id,
+                0,
+                (ev) => {
+                  applyEvent(ev);
+                  if (ev.message) {
+                    setStatusNotice(ev.message);
+                  }
+                },
+                async () => {
+                  unsubscribe();
+                  try {
+                    const refreshed = await apiClient.getScene(targetSceneId);
+                    reconcileAuthoritativeScene(refreshed);
+                    setStatusNotice(
+                      refreshed.entities.length > 0
+                        ? `Analysis complete: ${refreshed.entities.length} people identified.`
+                        : "Analysis complete: No people detected."
+                    );
+                  } catch {
+                    // Ignore snapshot refresh error if offline
+                  }
+                  resolve();
+                },
+                (streamErr) => {
+                  console.warn("Event stream error:", streamErr);
+                }
+              );
+            });
           } catch (analysisErr: unknown) {
             console.warn("Analysis pipeline error:", analysisErr);
             setAnalysisState(false, null, 0);
@@ -108,30 +115,42 @@ export const UploadButton: React.FC<UploadButtonProps> = ({
     }
   };
 
+  const handleClick = () => {
+    if (fileInputRef.current) {
+      fileInputRef.current.click();
+    }
+  };
+
   return (
-    <>
+    <div className={className}>
       <input
         ref={fileInputRef}
         type="file"
         accept="image/jpeg,image/png,image/webp"
-        className={styles.hiddenInput}
+        style={{ display: "none" }}
         onChange={handleFileChange}
         data-testid="file-upload-input"
       />
       <button
         type="button"
-        className={`${styles.uploadBtn} ${className || ""}`}
-        onClick={() => fileInputRef.current?.click()}
+        className={styles.uploadButton}
+        onClick={handleClick}
         disabled={isUploading}
         data-testid="upload-photograph-btn"
       >
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+        <svg
+          className={styles.icon}
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="2"
+        >
           <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
           <polyline points="17 8 12 3 7 8" />
           <line x1="12" y1="3" x2="12" y2="15" />
         </svg>
-        <span>{isUploading ? "Processing..." : label}</span>
+        <span>{isUploading ? "Uploading..." : label}</span>
       </button>
-    </>
+    </div>
   );
 };

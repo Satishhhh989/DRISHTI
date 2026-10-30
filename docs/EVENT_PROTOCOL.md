@@ -1,20 +1,26 @@
 # DRISHTI Processing Event Contract & Synchronization Protocol
 
-**Version:** 1.0.0
+**Version:** 1.2.0 (Phase 04: Live Visualization & Progressive Processing Engine)
 
 ## 1. Overview
 
 The backend processing pipeline emits typed, strictly-sequenced events as operations progress. This event protocol ensures:
 1. **Deterministic Ordering**: Every event includes a strictly monotonically increasing sequence number ($1, 2, 3, \dots$) scoped to the job.
-2. **Reconciliation & Catch-Up**: If the client disconnects, reloads, or experiences network jitter, it can query all events since its last received sequence number:
+2. **Real-Time Server-Sent Events (SSE)**: Clients subscribe directly to high-throughput, low-latency live events:
+   ```http
+   GET /api/v1/jobs/{job_id}/stream?since={lastSequenceNumber}
+   ```
+   Supports the standard `Last-Event-ID` header and automatically replays historical events upon reconnection.
+3. **Reconciliation & Catch-Up Polling**: Polling endpoint available for non-streaming clients or fallback:
    ```http
    GET /api/v1/jobs/{job_id}/events?since={lastSequenceNumber}
    ```
-3. **Job Status Polling**: Direct endpoint for retrieving current job status, execution duration, and progress fraction:
+4. **Cancellation Endpoint**: Safely aborts pending or in-flight processing jobs without discarding validated assets:
    ```http
-   GET /api/v1/jobs/{job_id}
+   POST /api/v1/jobs/{job_id}/cancel
    ```
-4. **Decoupled Architecture**: Backend processing state is decoupled from frontend animation state. UI transitions do not serve as proof of inference completion.
+5. **Bounded Retention**: In-memory event buffers are capped at a maximum of 500 events per job with FIFO eviction to prevent memory bloat.
+6. **Decoupled Architecture**: Backend processing state is decoupled from frontend animation state. UI transitions do not serve as proof of inference completion.
 
 ---
 

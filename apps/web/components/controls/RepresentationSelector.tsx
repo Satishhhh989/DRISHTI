@@ -1,7 +1,10 @@
 "use client";
 
 import React from "react";
-import { VisualizationMode } from "@photo-to-3d/scene-schema";
+import {
+  VisualizationMode,
+  computeRepresentationAvailability,
+} from "@photo-to-3d/scene-schema";
 import { useSceneStore } from "@/stores/scene-store";
 import styles from "./RepresentationSelector.module.css";
 
@@ -25,11 +28,31 @@ const MODES: ModeOption[] = [
 export const RepresentationSelector: React.FC = () => {
   const visualizationMode = useSceneStore((state) => state.visualizationMode);
   const setVisualizationMode = useSceneStore((state) => state.setVisualizationMode);
+  const currentScene = useSceneStore((state) => state.currentScene);
+  const currentStageMessage = useSceneStore((state) => state.currentStageMessage);
+  const isAnalyzing = useSceneStore((state) => state.isAnalyzing);
+
+  const availability = computeRepresentationAvailability(
+    currentScene,
+    currentStageMessage,
+    isAnalyzing
+  );
 
   return (
     <nav className={styles.container} aria-label="Visualization and Representation Mode">
       {MODES.map((mode) => {
         const isActive = visualizationMode === mode.id;
+        const avail = availability[mode.id];
+
+        let badgeText = mode.badge;
+        if (!badgeText) {
+          if (avail.status === "processing") {
+            badgeText = "LIVE";
+          } else if (avail.status === "failed") {
+            badgeText = "ERR";
+          }
+        }
+
         return (
           <button
             key={mode.id}
@@ -38,9 +61,10 @@ export const RepresentationSelector: React.FC = () => {
             onClick={() => setVisualizationMode(mode.id)}
             aria-pressed={isActive}
             data-testid={mode.testId}
+            title={avail.reason}
           >
             <span>{mode.label}</span>
-            {mode.badge && <span className={styles.badge}>{mode.badge}</span>}
+            {badgeText && <span className={styles.badge}>{badgeText}</span>}
           </button>
         );
       })}

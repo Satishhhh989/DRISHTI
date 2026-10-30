@@ -61,11 +61,13 @@ bash scripts/test.sh
 ```
 
 This executes:
-1. `packages/scene-schema`: Vitest schema validation and contract tests.
-2. `packages/shared-types`: Vitest event contract and DTO tests.
-3. `apps/web`: Vitest component, store, and visualization tests.
-4. `services/api`: Pytest backend test suite (unit tests, mock pipeline, and real model MPS smoke test).
-5. `tests/e2e`: Playwright browser-level end-to-end tests.
+1. `packages/scene-schema`: Vitest schema validation, representation availability, and contract tests (9 tests).
+2. `packages/shared-types`: Vitest event contract and DTO tests (2 tests).
+3. `apps/web`: Vitest component, store, event reducer, and visualization tests (22 tests).
+4. `services/api`: Pytest backend test suite (unit tests, mock pipeline, real model MPS smoke tests, and progressive event stream tests) (48 tests).
+5. `tests/e2e`: Playwright browser-level end-to-end tests (8 tests).
+
+**Total Verified Tests: 89 passing.**
 
 ### Running Individual Test Suites
 
@@ -92,19 +94,23 @@ pnpm test:e2e
 
 ---
 
-## 4. Hardware & Pipeline Endpoints
+## 4. Hardware, Pipeline & Streaming Endpoints
 
-DRISHTI exposes dedicated endpoints for inspecting hardware acceleration and pipeline status:
+DRISHTI exposes dedicated endpoints for inspecting hardware acceleration, pipeline status, and real-time streaming:
 
 | Method | Endpoint | Description |
 |---|---|---|
 | `GET` | `/api/v1/pipeline/hardware` | Returns detected compute device (`mps`, `cuda`, `cpu`), device name, and allocation test status. |
 | `GET` | `/api/v1/pipeline/models` | Lists local model files, sizes, and readiness. |
 | `POST` | `/api/v1/pipeline/models/download` | Explicitly downloads default model weights with verification. |
-| `POST` | `/api/v1/pipeline/analyze` | Initiates the 9-stage image intelligence pipeline for an uploaded photograph. |
+| `POST` | `/api/v1/pipeline/analyze` | Initiates the 12-stage image intelligence and depth pipeline for an uploaded photograph. |
 | `GET` | `/api/v1/jobs/{job_id}` | Polls status, current stage, and progress of an active job. |
-| `GET` | `/api/v1/jobs/{job_id}/events` | Retrieves ordered, sequenced events since a given sequence number. |
+| `GET` | `/api/v1/jobs/{job_id}/events` | Retrieves ordered, sequenced events since a given sequence number (`?since=...`). |
+| `GET` | `/api/v1/jobs/{job_id}/stream` | Server-Sent Events (SSE) stream (`text/event-stream`) with automatic `Last-Event-ID` catchup. |
+| `POST` | `/api/v1/jobs/{job_id}/cancel` | Cooperatively cancels an active job without discarding already produced assets. |
 | `GET` | `/api/v1/assets/masks/{filename}` | Serves individual 8-bit binary PNG segmentation masks. |
+| `GET` | `/api/v1/assets/depth/{filename}` | Serves 8-bit grayscale depth visualization PNGs. |
+| `GET` | `/api/v1/assets/photos/{filename}` | Serves sanitized original user photographs. |
 
 ---
 
@@ -118,7 +124,7 @@ Configuration is driven by `.env`:
 | `API_HOST` | `127.0.0.1` | Loopback IP address for local privacy |
 | `API_PORT` | `8000` | Local port for FastAPI service |
 | `API_LOG_LEVEL` | `info` | Structured logging verbosity |
-| `STORAGE_ROOT` | `./data/storage` | Local directory for photographs and masks |
+| `STORAGE_ROOT` | `./data/storage` | Local directory for photographs, masks, and depth maps |
 | `MODELS_DIR` | `./data/models` | Local directory for neural network weights |
 | `MAX_UPLOAD_SIZE_MB`| `50` | Maximum file upload limit in megabytes |
 | `CORS_ORIGINS` | `http://localhost:3000,http://127.0.0.1:3000` | Allowed origins for web client |

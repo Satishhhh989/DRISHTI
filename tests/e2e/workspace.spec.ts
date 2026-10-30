@@ -5,7 +5,7 @@ test.describe("Phase 01 & 02: Workspace & Viewport E2E Verification", () => {
     await page.goto("/");
     await expect(page.locator('[data-testid="workspace-root"]')).toBeVisible();
     await expect(page.getByText("PHOTO → 3D ENGINE")).toBeVisible();
-    await expect(page.getByText(/Phase 0[1-3]/)).toBeVisible();
+    await expect(page.getByText(/Phase 0[1-4]/)).toBeVisible();
   });
 
   test("2. The upload control is visible in top bar and empty viewport", async ({ page }) => {
@@ -103,5 +103,16 @@ test.describe("Phase 01 & 02: Workspace & Viewport E2E Verification", () => {
 
     await spatialTab.click();
     await expect(spatialTab).toHaveAttribute("aria-pressed", "true");
+  });
+
+  test("8. Phase 04 Pipeline Inspector is visible and reflects real-time stage states", async ({ page }) => {
+    await page.goto("/");
+    const inspector = page.locator('[data-testid="pipeline-inspector"]');
+    await expect(inspector).toBeVisible();
+    await expect(page.locator('[data-testid="stage-row-validation"]')).toBeVisible();
+    await expect(page.locator('[data-testid="stage-row-detection"]')).toBeVisible();
+    await expect(page.locator('[data-testid="stage-row-segmentation"]')).toBeVisible();
+    await expect(page.locator('[data-testid="stage-row-depth"]')).toBeVisible();
+    await expect(page.locator('[data-testid="stage-row-spatial"]')).toBeVisible();
   });
 });
