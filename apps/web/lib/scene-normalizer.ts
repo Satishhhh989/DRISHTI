@@ -5,6 +5,7 @@
  */
 
 import { Scene, SceneEntity, SceneRepresentations, SourceImageMetadata, RepresentationAsset } from "@photo-to-3d/scene-schema";
+import { ProcessingEvent } from "@photo-to-3d/shared-types";
 
 function normalizeRepresentation(rep: any): RepresentationAsset {
   if (!rep) {
@@ -238,5 +239,42 @@ export function normalizeScene(raw: any): Scene {
     assemblyReport: raw.assemblyReport || raw.assembly_report,
     processingStatus: raw.processingStatus || raw.processing_status || "unprocessed",
     activeJobId: raw.activeJobId !== undefined ? raw.activeJobId : (raw.active_job_id ?? null),
+  };
+}
+
+export function normalizeProcessingEvent(raw: any): ProcessingEvent {
+  if (!raw) return raw;
+  const assetRef = raw.assetReference || raw.asset_reference;
+  const errorObj = raw.error;
+
+  return {
+    eventId: raw.eventId || raw.event_id || "",
+    jobId: raw.jobId || raw.job_id || "",
+    sceneId: raw.sceneId || raw.scene_id || "",
+    eventType: raw.eventType || raw.event_type || "progress_updated",
+    timestamp: raw.timestamp || new Date().toISOString(),
+    sequenceNumber: Number(raw.sequenceNumber ?? raw.sequence_number ?? 0),
+    stageIdentifier: raw.stageIdentifier || raw.stage_identifier || "image_analysis",
+    status: raw.status || "running",
+    progress: raw.progress !== undefined ? Number(raw.progress) : undefined,
+    message: raw.message ?? undefined,
+    entityId: raw.entityId ?? raw.entity_id ?? null,
+    assetReference: assetRef
+      ? {
+          assetId: assetRef.assetId ?? assetRef.asset_id ?? "",
+          assetType: assetRef.assetType ?? assetRef.asset_type,
+          uri: assetRef.uri ?? "",
+          mimeType: assetRef.mimeType ?? assetRef.mime_type ?? "",
+          sizeBytes: assetRef.sizeBytes ?? assetRef.size_bytes,
+        }
+      : null,
+    error: errorObj
+      ? {
+          code: errorObj.code,
+          message: errorObj.message,
+          stage: errorObj.stage,
+          details: errorObj.details,
+        }
+      : null,
   };
 }

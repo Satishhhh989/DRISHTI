@@ -5,7 +5,7 @@
 
 import { HealthResponse, VersionResponse, AssetUploadResponse, ProcessingEvent } from "@photo-to-3d/shared-types";
 import { Scene, Project, ProjectSettings, Vector3D, EulerRotation } from "@photo-to-3d/scene-schema";
-import { normalizeScene } from "./scene-normalizer";
+import { normalizeScene, normalizeProcessingEvent } from "./scene-normalizer";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000";
 
@@ -138,7 +138,11 @@ export class ApiClient {
     if (!res.ok) {
       throw new Error(`Failed to fetch events for job ${jobId}`);
     }
-    return res.json();
+    const data = await res.json();
+    return {
+      ...data,
+      events: (data.events || []).map(normalizeProcessingEvent),
+    };
   }
 
   /**
@@ -179,7 +183,8 @@ export class ApiClient {
         eventSource.onmessage = (e) => {
           if (closed) return;
           try {
-            const ev: ProcessingEvent = JSON.parse(e.data);
+            const raw = JSON.parse(e.data);
+            const ev: ProcessingEvent = normalizeProcessingEvent(raw);
             lastSeq = Math.max(lastSeq, ev.sequenceNumber);
             onEvent(ev);
 
@@ -234,13 +239,14 @@ export class ApiClient {
           if (res.ok) {
             const data = await res.json();
             if (data.events && data.events.length > 0) {
-              for (const ev of data.events) {
-                lastSeq = Math.max(lastSeq, ev.sequence_number || ev.sequenceNumber);
+              for (const raw of data.events) {
+                const ev: ProcessingEvent = normalizeProcessingEvent(raw);
+                lastSeq = Math.max(lastSeq, ev.sequenceNumber);
                 onEvent(ev);
                 if (
-                  ev.event_type === "job_completed" ||
-                  ev.event_type === "job_cancelled" ||
-                  (ev.event_type === "stage_failed" && ev.status === "failed")
+                  ev.eventType === "job_completed" ||
+                  ev.eventType === "job_cancelled" ||
+                  (ev.eventType === "stage_failed" && ev.status === "failed")
                 ) {
                   handleTerminal();
                   return;

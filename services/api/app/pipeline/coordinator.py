@@ -783,6 +783,7 @@ class PipelineCoordinator:
                                 stage_identifier="human_reconstruction",
                                 status="running",
                                 progress=0.92 + (0.04 * (idx / total_people)),
+                                entity_id=entity.id,
                                 asset_reference=AssetReference(
                                     asset_id=mesh_asset.asset_id,
                                     asset_type="mesh",
@@ -947,6 +948,7 @@ class PipelineCoordinator:
                             stage_identifier="skeleton_fitting",
                             status="running",
                             progress=0.93 + 0.01 * (successful_skeletons / max(1, len(scene.entities))),
+                            entity_id=entity.id,
                             asset_reference=AssetReference(
                                 asset_id=skeleton.id,
                                 asset_type="skeleton",
@@ -1006,6 +1008,7 @@ class PipelineCoordinator:
                                 stage_identifier="mesh_rigging",
                                 status="running",
                                 progress=0.94 + 0.01 * (successful_rigs / max(1, len(scene.entities))),
+                                entity_id=entity.id,
                                 asset_reference=AssetReference(
                                     asset_id=rig_data.id,
                                     asset_type="rig",
@@ -1085,6 +1088,7 @@ class PipelineCoordinator:
                             stage_identifier="animation_preparation",
                             status="running",
                             progress=0.95 + 0.01 * (prepared_animations / max(1, len(scene.entities))),
+                            entity_id=entity.id,
                             asset_reference=AssetReference(
                                 asset_id=f"anim-{entity.id}",
                                 asset_type="animation",

@@ -7,7 +7,7 @@
  * and tracks stage progression without disrupting camera or active selection.
  */
 
-import { Scene, VisualizationMode } from "@photo-to-3d/scene-schema";
+import { Scene, SceneEntity, VisualizationMode } from "@photo-to-3d/scene-schema";
 import { ProcessingEvent } from "@photo-to-3d/shared-types";
 
 export interface StageProgressInfo {
@@ -55,6 +55,9 @@ export function reduceProcessingEvent<T extends ReducerState>(
   const nextSequenceNumber = event.sequenceNumber;
   const nextStages = { ...state.stages };
   let nextCurrentScene = state.currentScene ? { ...state.currentScene } : null;
+  if (nextCurrentScene && nextCurrentScene.id.startsWith("local-") && event.sceneId) {
+    nextCurrentScene.id = event.sceneId;
+  }
   let nextDepthVisUrl = state.depthVisualizationUrl;
   let nextIsAnalyzing = state.isAnalyzing;
   let nextProgress = state.analysisProgress;
@@ -130,33 +133,129 @@ export function reduceProcessingEvent<T extends ReducerState>(
         }
 
         // Reconstructed 3D Human Mesh ready
-        if (assetRef.assetType === "mesh" && event.entityId) {
-          const updatedEntities = nextCurrentScene.entities.map((entity) => {
-            if (entity.id === event.entityId) {
-              return {
-                ...entity,
-                geometryRef: assetRef.assetId,
-                reconstruction: {
-                  status: "ready" as const,
-                  meshAssetId: assetRef.assetId,
-                  meshUrl: assetRef.uri,
-                  textureAvailability: "none" as const,
-                  reconstructedAt: event.timestamp,
-                },
+        if (assetRef.assetType === "mesh") {
+          const targetEntityId = event.entityId || nextCurrentScene.entities.find((e) => assetRef.uri.includes(e.id))?.id;
+          if (targetEntityId) {
+            const updatedEntities = nextCurrentScene.entities.map((entity) => {
+              if (entity.id === targetEntityId) {
+                return {
+                  ...entity,
+                  geometryRef: assetRef.assetId,
+                  reconstruction: {
+                    status: "ready" as const,
+                    meshAssetId: assetRef.assetId,
+                    meshUrl: assetRef.uri,
+                    textureAvailability: "none" as const,
+                    reconstructedAt: event.timestamp,
+                  },
+                };
+              }
+              return entity;
+            });
+            nextCurrentScene.entities = updatedEntities;
+            if (nextCurrentScene.representations) {
+              nextCurrentScene.representations.wireframe = {
+                status: "ready",
+                updatedAt: event.timestamp,
+              };
+              nextCurrentScene.representations.solid3d = {
+                status: "ready",
+                updatedAt: event.timestamp,
+              };
+              nextCurrentScene.representations.combined = {
+                status: "ready",
+                updatedAt: event.timestamp,
               };
             }
-            return entity;
-          });
-          nextCurrentScene.entities = updatedEntities;
-          if (nextCurrentScene.representations) {
-            nextCurrentScene.representations.wireframe = {
-              status: "ready",
-              updatedAt: event.timestamp,
-            };
-            nextCurrentScene.representations.solid3d = {
-              status: "ready",
-              updatedAt: event.timestamp,
-            };
+          }
+        }
+
+        // Skeleton ready
+        if (assetRef.assetType === "skeleton") {
+          const targetEntityId = event.entityId || nextCurrentScene.entities.find((e) => assetRef.uri.includes(e.id))?.id;
+          if (targetEntityId) {
+            const updatedEntities: SceneEntity[] = nextCurrentScene.entities.map((entity) => {
+              if (entity.id === targetEntityId) {
+                return {
+                  ...entity,
+                  skeletonRef: assetRef.assetId,
+                  skeleton: entity.skeleton || {
+                    id: assetRef.assetId,
+                    entityId: entity.id,
+                    schemaVersion: "1.0.0",
+                    rootJointId: "joint_00_pelvis",
+                    joints: [],
+                    bones: [],
+                    coordinateConvention: { up: "+Y", forward: "+Z", right: "+X", units: "meters" },
+                    source: "smpl_regressed",
+                    isAligned: true,
+                    validationStatus: "valid",
+                    validationErrors: [],
+                    createdAt: event.timestamp,
+                  },
+                };
+              }
+              return entity;
+            });
+            nextCurrentScene.entities = updatedEntities;
+          }
+        }
+
+        // Rig ready
+        if (assetRef.assetType === "rig") {
+          const targetEntityId = event.entityId || nextCurrentScene.entities.find((e) => assetRef.uri.includes(e.id))?.id;
+          if (targetEntityId) {
+            const updatedEntities: SceneEntity[] = nextCurrentScene.entities.map((entity) => {
+              if (entity.id === targetEntityId) {
+                return {
+                  ...entity,
+                  rig: entity.rig || {
+                    id: assetRef.assetId,
+                    entityId: entity.id,
+                    skeletonId: entity.skeleton?.id || `skel-${entity.id}`,
+                    status: "rigged",
+                    skinningMethod: "smpl_lbs_native",
+                    maxInfluencesPerVertex: 4,
+                    weightsNormalized: true,
+                    boneCount: 24,
+                    riggedAt: event.timestamp,
+                  },
+                };
+              }
+              return entity;
+            });
+            nextCurrentScene.entities = updatedEntities;
+            if (nextCurrentScene.representations) {
+              nextCurrentScene.representations.articulated = {
+                status: "ready",
+                updatedAt: event.timestamp,
+              };
+              nextCurrentScene.representations.combined = {
+                status: "ready",
+                updatedAt: event.timestamp,
+              };
+            }
+          }
+        }
+
+        // Animation ready
+        if (assetRef.assetType === "animation") {
+          const targetEntityId = event.entityId || nextCurrentScene.entities.find((e) => assetRef.uri.includes(e.id))?.id;
+          if (targetEntityId) {
+            const updatedEntities = nextCurrentScene.entities.map((entity) => {
+              if (entity.id === targetEntityId) {
+                return {
+                  ...entity,
+                  animationState: {
+                    ...entity.animationState,
+                    currentClip: entity.animationState?.currentClip || "idle_breathing",
+                    isPlaying: true,
+                  },
+                };
+              }
+              return entity;
+            });
+            nextCurrentScene.entities = updatedEntities;
           }
         }
 
@@ -307,6 +406,28 @@ export function reduceProcessingEvent<T extends ReducerState>(
       nextMessage = event.message || "Analysis complete.";
       if (nextCurrentScene) {
         nextCurrentScene.processingStatus = "ready";
+        if (nextCurrentScene.representations) {
+          if (nextCurrentScene.entities.some((e) => e.reconstruction?.status === "ready")) {
+            nextCurrentScene.representations.wireframe = {
+              status: "ready",
+              updatedAt: event.timestamp,
+            };
+            nextCurrentScene.representations.solid3d = {
+              status: "ready",
+              updatedAt: event.timestamp,
+            };
+            nextCurrentScene.representations.combined = {
+              status: "ready",
+              updatedAt: event.timestamp,
+            };
+          }
+          if (nextCurrentScene.entities.some((e) => e.rig?.status === "rigged")) {
+            nextCurrentScene.representations.articulated = {
+              status: "ready",
+              updatedAt: event.timestamp,
+            };
+          }
+        }
       }
       break;
     }

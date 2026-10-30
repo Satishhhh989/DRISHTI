@@ -63,15 +63,7 @@ export type AssetCategoryType =
 
 export interface AssetReference {
   assetId: string;
-  assetType: 
-    | "original_photo"
-    | "segmentation_mask"
-    | "depth_map"
-    | "depth_visualization"
-    | "mesh"
-    | "texture"
-    | "skeleton"
-    | "export";
+  assetType: AssetCategoryType;
   uri: string;
   mimeType: string;
   sizeBytes?: number;

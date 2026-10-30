@@ -3,6 +3,7 @@ import {
   reduceProcessingEvent,
   ReducerState,
 } from "../stores/event-reducer";
+import { normalizeProcessingEvent } from "../lib/scene-normalizer";
 import { Scene, createInitialScene } from "@photo-to-3d/scene-schema";
 import { ProcessingEvent } from "@photo-to-3d/shared-types";
 
@@ -258,6 +259,68 @@ describe("reduceProcessingEvent", () => {
     expect(nextState.isAnalyzing).toBe(false);
     expect(nextState.analysisProgress).toBe(1.0);
     expect(nextState.currentScene?.processingStatus).toBe("ready");
+  });
+
+  it("handles 3D human mesh asset_ready events and transitions representations", () => {
+    const state = createMockState();
+    const meshEvent: ProcessingEvent = {
+      eventId: "ev-mesh-1",
+      jobId: "job-1",
+      sceneId: "scene-test-1",
+      eventType: "asset_ready",
+      timestamp: new Date().toISOString(),
+      sequenceNumber: 1,
+      stageIdentifier: "human_reconstruction",
+      status: "running",
+      entityId: "person-001",
+      assetReference: {
+        assetId: "mesh-asset-1",
+        assetType: "mesh",
+        uri: "/api/v1/assets/meshes/scene-test-1_person-001.glb",
+        mimeType: "model/gltf-binary",
+        sizeBytes: 331940,
+      },
+    };
+
+    const nextState = reduceProcessingEvent(state, meshEvent);
+    const p1 = nextState.currentScene?.entities.find((e) => e.id === "person-001");
+    expect(p1?.reconstruction?.status).toBe("ready");
+    expect(p1?.reconstruction?.meshUrl).toBe("/api/v1/assets/meshes/scene-test-1_person-001.glb");
+    expect(p1?.geometryRef).toBe("mesh-asset-1");
+    expect(nextState.currentScene?.representations.solid3d.status).toBe("ready");
+    expect(nextState.currentScene?.representations.wireframe.status).toBe("ready");
+  });
+
+  it("normalizes backend snake_case events to camelCase cleanly", () => {
+    const rawBackendEvent = {
+      event_id: "raw-ev-1",
+      job_id: "job-99",
+      scene_id: "scene-99",
+      event_type: "asset_ready",
+      timestamp: "2026-10-30T17:00:00Z",
+      sequence_number: 12,
+      stage_identifier: "human_reconstruction",
+      status: "running",
+      progress: 0.95,
+      message: "3D human mesh ready",
+      entity_id: "person-123",
+      asset_reference: {
+        asset_id: "asset-mesh-123",
+        asset_type: "mesh",
+        uri: "/api/v1/assets/meshes/mesh.glb",
+        mime_type: "model/gltf-binary",
+        size_bytes: 331940,
+      },
+    };
+
+    const normalized = normalizeProcessingEvent(rawBackendEvent);
+    expect(normalized.eventId).toBe("raw-ev-1");
+    expect(normalized.eventType).toBe("asset_ready");
+    expect(normalized.sequenceNumber).toBe(12);
+    expect(normalized.stageIdentifier).toBe("human_reconstruction");
+    expect(normalized.entityId).toBe("person-123");
+    expect(normalized.assetReference?.assetType).toBe("mesh");
+    expect(normalized.assetReference?.uri).toBe("/api/v1/assets/meshes/mesh.glb");
   });
 });
 

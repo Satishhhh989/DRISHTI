@@ -11,7 +11,7 @@ import { Scene, VisualizationMode, RepresentationMode, Transform, createInitialS
 import { ProcessingEvent } from "@photo-to-3d/shared-types";
 import { apiClient } from "@/lib/api-client";
 import { assetCache } from "@/lib/asset-cache";
-import { normalizeScene } from "@/lib/scene-normalizer";
+import { normalizeScene, normalizeProcessingEvent } from "@/lib/scene-normalizer";
 import {
   reduceProcessingEvent,
   StageProgressInfo,
@@ -126,6 +126,9 @@ export const useSceneStore = create<SceneState>((set, get) => ({
     // Preserve active visualization mode if it is ready, otherwise fall back to original
     set({
       currentScene: norm,
+      isAnalyzing: false,
+      analysisProgress: 1.0,
+      activeJobId: null,
       depthVisualizationUrl: depthVisUrl,
       photoDimensions: {
         width: norm.sourceImage?.width || 1920,
@@ -136,8 +139,9 @@ export const useSceneStore = create<SceneState>((set, get) => ({
   },
 
   applyEvent: (event) => {
+    const norm = normalizeProcessingEvent(event);
     const state = get();
-    const updated = reduceProcessingEvent(state, event);
+    const updated = reduceProcessingEvent(state, norm);
 
     // Normalize depth visualization URL if it was updated
     if (
