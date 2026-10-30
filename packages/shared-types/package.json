@@ -1,0 +1,17 @@
+{
+  "name": "@photo-to-3d/shared-types",
+  "version": "0.1.0",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "scripts": {
+    "build": "tsc -b",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@photo-to-3d/scene-schema": "workspace:*"
+  },
+  "devDependencies": {
+    "typescript": "^5.8.2",
+    "vitest": "^3.0.7"
+  }
+}

@@ -1,0 +1,61 @@
+.statusBar {
+  position: absolute;
+  bottom: 14px;
+  left: 16px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 6px 12px;
+  background-color: rgba(18, 18, 20, 0.85);
+  backdrop-filter: blur(8px);
+  border: 1px solid #242428;
+  border-radius: 6px;
+  font-size: 11px;
+  color: #a1a1aa;
+  pointer-events: auto;
+  z-index: 40;
+}
+
+.notice {
+  color: #d4d4d8;
+}
+
+.errorPill {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: #ef4444;
+  font-weight: 500;
+}
+
+.clearErrorBtn {
+  background: transparent;
+  border: none;
+  color: #71717a;
+  cursor: pointer;
+  padding: 0 4px;
+}
+
+.clearErrorBtn:hover {
+  color: #ef4444;
+}
+
+.engineState {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.pulsingDot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #3b82f6;
+  animation: pulse 1.5s infinite;
+}
+
+@keyframes pulse {
+  0% { opacity: 0.4; }
+  50% { opacity: 1; }
+  100% { opacity: 0.4; }
+}

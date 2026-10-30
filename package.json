@@ -1,0 +1,25 @@
+{
+  "name": "photo-to-3d-engine",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Local-first AI application transforming photographs of multiple people into interactive 3D scenes",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev": "bash scripts/dev.sh",
+    "dev:web": "pnpm --filter @photo-to-3d/web dev",
+    "dev:api": "bash scripts/run_api.sh",
+    "build": "pnpm --filter \"@photo-to-3d/*\" build",
+    "test": "bash scripts/test.sh",
+    "test:web": "pnpm --filter @photo-to-3d/web test",
+    "test:backend": "bash scripts/test_backend.sh",
+    "test:e2e": "playwright test",
+    "lint": "pnpm --filter \"@photo-to-3d/*\" lint"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.64.1",
+    "typescript": "^5.8.2"
+  }
+}

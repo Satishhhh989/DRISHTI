@@ -1,0 +1,47 @@
+# Dependencies
+node_modules/
+.pnpm-store/
+
+# Next.js
+.next/
+out/
+build/
+dist/
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+.venv/
+ENV/
+*.egg-info/
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Local data & storage
+data/storage/
+*.log
+local-storage/
+
+# Environment files
+.env
+.env.local
+.env.production
+.env.development
+
+# OS & IDE
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# Testing
+test-results/
+playwright-report/
+blob-report/
+playwright/.cache/

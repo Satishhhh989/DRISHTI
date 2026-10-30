@@ -1,0 +1,15 @@
+.workspaceLayout {
+  display: flex;
+  flex-direction: column;
+  width: 100vw;
+  height: 100vh;
+  background-color: #0d0d0f;
+  overflow: hidden;
+}
+
+.mainArea {
+  display: flex;
+  flex: 1;
+  position: relative;
+  overflow: hidden;
+}

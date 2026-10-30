@@ -1,0 +1,101 @@
+.viewportContainer {
+  position: relative;
+  flex: 1;
+  height: 100%;
+  background-color: #0d0d0f;
+  overflow: hidden;
+  outline: none;
+}
+
+.canvasWrapper {
+  width: 100%;
+  height: 100%;
+}
+
+.emptyState {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  background-color: #0d0d0f;
+  padding: 24px;
+  text-align: center;
+  user-select: none;
+  z-index: 10;
+}
+
+.emptyCard {
+  max-width: 440px;
+  padding: 32px;
+  border: 1px dashed #2e2e34;
+  border-radius: 8px;
+  background-color: #121215;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
+  transition: border-color 0.2s ease, background-color 0.2s ease;
+}
+
+.emptyCard.dragOver {
+  border-color: #3b82f6;
+  background-color: #141722;
+}
+
+.iconContainer {
+  width: 48px;
+  height: 48px;
+  border-radius: 8px;
+  background: #1a1a20;
+  border: 1px solid #272730;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #a1a1aa;
+}
+
+.emptyTitle {
+  font-size: 15px;
+  font-weight: 600;
+  color: #f4f4f5;
+  margin: 0;
+}
+
+.emptyDescription {
+  font-size: 12px;
+  color: #71717a;
+  line-height: 1.6;
+  margin: 0;
+}
+
+.representationNotice {
+  position: absolute;
+  top: 18px;
+  left: 50%;
+  transform: translateX(-50%);
+  background-color: rgba(24, 24, 27, 0.92);
+  backdrop-filter: blur(8px);
+  border: 1px solid #3f3f46;
+  border-radius: 6px;
+  padding: 8px 16px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 12px;
+  color: #e4e4e7;
+  pointer-events: auto;
+  z-index: 30;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
+}
+
+.noticeBadge {
+  font-size: 10px;
+  text-transform: uppercase;
+  padding: 2px 6px;
+  border-radius: 4px;
+  background-color: #27272a;
+  color: #a1a1aa;
+  border: 1px solid #3f3f46;
+}
