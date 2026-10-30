@@ -79,3 +79,4 @@ def test_bounding_box_validation():
     with pytest.raises(ValidationError) as exc_info:
         BoundingBox2D(x_min=0.8, y_min=0.1, x_max=0.3, y_max=0.9)
     assert "must be strictly less than x_max" in str(exc_info.value)
+

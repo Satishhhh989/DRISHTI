@@ -14,3 +14,4 @@ async def test_version_endpoint():
         assert data["service_version"] == "0.1.0"
         assert data["api_version"] == "v1"
         assert data["schema_version"] == "1.0.0"
+

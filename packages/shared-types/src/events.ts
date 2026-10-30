@@ -1,6 +1,6 @@
 /**
- * PHOTO → 3D ENGINE - Processing Event Contract
- * Version 1.0.0
+ * DRISHTI - Processing Event Contract
+ * Version 1.1.0
  * 
  * Defines the event-driven synchronization contract between
  * backend processing jobs and connected frontends.
@@ -19,8 +19,16 @@ export type ProcessingEventType =
 
 export type PipelineStageIdentifier =
   | "image_analysis"
+  | "image_validation"
+  | "image_preparation"
   | "person_detection"
+  | "detection_validation"
   | "segmentation"
+  | "instance_segmentation"
+  | "mask_validation"
+  | "asset_persistence"
+  | "scene_update"
+  | "completed"
   | "depth_estimation"
   | "spatial_photo"
   | "mesh_reconstruction"

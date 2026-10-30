@@ -1,32 +1,43 @@
 /**
- * PHOTO → 3D ENGINE - Scene Store (Zustand)
- * Manages active scene metadata, loaded representations, and local photo assets.
+ * DRISHTI - Scene Store (Zustand)
+ * Manages active scene metadata, loaded representations, local photo assets,
+ * visualization modes, and detection/segmentation results.
  */
 
 import { create } from "zustand";
-import { Scene, RepresentationMode, createInitialScene } from "@photo-to-3d/scene-schema";
+import { Scene, VisualizationMode, RepresentationMode, createInitialScene } from "@photo-to-3d/scene-schema";
 
 interface SceneState {
   currentScene: Scene | null;
   activeRepresentation: RepresentationMode;
+  visualizationMode: VisualizationMode;
   localPhotoUrl: string | null;
   photoDimensions: { width: number; height: number; aspect: number } | null;
   isUploading: boolean;
+  isAnalyzing: boolean;
+  analysisProgress: number;
+  currentStageMessage: string | null;
 
   // Actions
   setScene: (scene: Scene) => void;
   setActiveRepresentation: (mode: RepresentationMode) => void;
+  setVisualizationMode: (mode: VisualizationMode) => void;
   setLocalPhoto: (url: string, width: number, height: number, filename: string) => void;
   setIsUploading: (uploading: boolean) => void;
+  setAnalysisState: (analyzing: boolean, message?: string | null, progress?: number) => void;
   clearScene: () => void;
 }
 
 export const useSceneStore = create<SceneState>((set) => ({
   currentScene: null,
   activeRepresentation: "photo",
+  visualizationMode: "detection",
   localPhotoUrl: null,
   photoDimensions: null,
   isUploading: false,
+  isAnalyzing: false,
+  analysisProgress: 0,
+  currentStageMessage: null,
 
   setScene: (scene) =>
     set({
@@ -36,9 +47,28 @@ export const useSceneStore = create<SceneState>((set) => ({
         height: scene.sourceImage.height,
         aspect: scene.sourceImage.aspectRatio,
       },
+      // If entities exist with detections, default to detection or segmentation mode
+      visualizationMode: scene.entities.length > 0 ? "detection" : "original",
     }),
 
-  setActiveRepresentation: (mode) => set({ activeRepresentation: mode }),
+  setActiveRepresentation: (mode) =>
+    set({
+      activeRepresentation: mode,
+      // Map representation to visualization mode
+      visualizationMode:
+        mode === "photo" ? "detection" : (mode as VisualizationMode),
+    }),
+
+  setVisualizationMode: (mode) =>
+    set({
+      visualizationMode: mode,
+      activeRepresentation:
+        mode === "wireframe"
+          ? "wireframe"
+          : mode === "solid3d"
+          ? "solid3d"
+          : "photo",
+    }),
 
   setLocalPhoto: (url, width, height, filename) => {
     const aspect = roundAspect(width, height);
@@ -64,10 +94,21 @@ export const useSceneStore = create<SceneState>((set) => ({
       currentScene: initialScene,
       photoDimensions: { width, height, aspect },
       activeRepresentation: "photo",
+      visualizationMode: "detection",
+      isAnalyzing: false,
+      analysisProgress: 0,
+      currentStageMessage: null,
     });
   },
 
   setIsUploading: (uploading) => set({ isUploading: uploading }),
+
+  setAnalysisState: (analyzing, message = null, progress = 0) =>
+    set({
+      isAnalyzing: analyzing,
+      currentStageMessage: message,
+      analysisProgress: progress,
+    }),
 
   clearScene: () =>
     set({
@@ -75,6 +116,10 @@ export const useSceneStore = create<SceneState>((set) => ({
       localPhotoUrl: null,
       photoDimensions: null,
       activeRepresentation: "photo",
+      visualizationMode: "original",
+      isAnalyzing: false,
+      analysisProgress: 0,
+      currentStageMessage: null,
     }),
 }));
 

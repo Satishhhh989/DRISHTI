@@ -190,3 +190,4 @@ export function validateScene(raw: unknown): ValidationResult<Scene> {
     value: errors.length === 0 ? (scene as Scene) : undefined
   };
 }
+

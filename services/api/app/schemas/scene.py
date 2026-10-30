@@ -1,5 +1,5 @@
-"""PHOTO → 3D ENGINE - Scene Schema Models
-Version 1.0.0
+"""DRISHTI - Scene Schema Models
+Version 1.1.0 (Phase 02: Image Intelligence & Person Segmentation)
 """
 
 from datetime import datetime, timezone
@@ -33,6 +33,33 @@ class AnimationState(BaseModel):
     loop: bool = True
 
 
+class DetectionInfo(BaseModel):
+    confidence: float = Field(..., ge=0.0, le=1.0)
+    bounding_box: BoundingBox2D
+    pixel_box: List[float] = Field(
+        ...,
+        min_length=4,
+        max_length=4,
+        description="[x_min, y_min, x_max, y_max] in image pixel coordinates"
+    )
+    model: str
+    detected_at: str = Field(
+        default_factory=lambda: datetime.now(timezone.utc).isoformat()
+    )
+    status: Literal["ready", "failed"] = "ready"
+
+
+class SegmentationInfo(BaseModel):
+    status: Literal["unstarted", "processing", "ready", "failed"] = "unstarted"
+    mask_asset_id: Optional[str] = None
+    mask_uri: Optional[str] = None
+    confidence: Optional[float] = Field(default=None, ge=0.0, le=1.0)
+    model: Optional[str] = None
+    segmented_at: Optional[str] = None
+    pixel_count: Optional[int] = None
+    error: Optional[str] = None
+
+
 class SceneEntity(BaseModel):
     id: str = Field(..., min_length=1, description="Unique entity identifier")
     entity_type: EntityType = Field(default="person")
@@ -47,6 +74,8 @@ class SceneEntity(BaseModel):
     visibility: bool = True
     reconstruction_status: ReconstructionStatus = "unstarted"
     confidence: Optional[ConfidenceMetadata] = None
+    detection: Optional[DetectionInfo] = None
+    segmentation: Optional[SegmentationInfo] = None
 
 
 class RepresentationAsset(BaseModel):

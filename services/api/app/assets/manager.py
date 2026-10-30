@@ -58,3 +58,4 @@ class AssetManager:
 
 
 asset_manager = AssetManager()
+

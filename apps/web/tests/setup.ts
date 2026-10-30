@@ -13,3 +13,4 @@ if (typeof window !== "undefined") {
   window.URL.createObjectURL = vi.fn(() => "blob:http://localhost:3000/mock-uuid");
   window.URL.revokeObjectURL = vi.fn();
 }
+

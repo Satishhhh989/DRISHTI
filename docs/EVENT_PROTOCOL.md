@@ -1,4 +1,4 @@
-# Processing Event Contract & Synchronization Protocol
+# DRISHTI Processing Event Contract & Synchronization Protocol
 
 **Version:** 1.0.0
 
@@ -6,11 +6,15 @@
 
 The backend processing pipeline emits typed, strictly-sequenced events as operations progress. This event protocol ensures:
 1. **Deterministic Ordering**: Every event includes a strictly monotonically increasing sequence number ($1, 2, 3, \dots$) scoped to the job.
-2. **Reconciliation & Catch-Up**: If the client disconnects or reloads, it can query all events since its last received sequence number:
+2. **Reconciliation & Catch-Up**: If the client disconnects, reloads, or experiences network jitter, it can query all events since its last received sequence number:
    ```http
    GET /api/v1/jobs/{job_id}/events?since={lastSequenceNumber}
    ```
-3. **Decoupled Architecture**: Backend processing state is decoupled from frontend animation state. UI transitions do not serve as proof of inference completion.
+3. **Job Status Polling**: Direct endpoint for retrieving current job status, execution duration, and progress fraction:
+   ```http
+   GET /api/v1/jobs/{job_id}
+   ```
+4. **Decoupled Architecture**: Backend processing state is decoupled from frontend animation state. UI transitions do not serve as proof of inference completion.
 
 ---
 
@@ -30,7 +34,25 @@ The backend processing pipeline emits typed, strictly-sequenced events as operat
 
 ---
 
-## 3. Event Payload Structure
+## 3. Phase 02 Pipeline Stages
+
+The Phase 02 Image Intelligence & Person Segmentation pipeline runs 9 sequential stages:
+
+| Stage Identifier | Progress Weight | Description |
+|---|---|---|
+| `image_validation` | 10% | Validates file format, checks against decompression bombs, ensures integrity. |
+| `image_preparation` | 20% | Resolves local path, normalizes EXIF orientation, extracts dimensions. |
+| `person_detection` | 40% | Runs local YOLOv8 neural network inference to isolate person bounding boxes. |
+| `detection_validation` | 50% | Filters low-confidence detections, validates coordinates, assigns entity IDs. |
+| `instance_segmentation` | 70% | Generates individual instance masks and resizes to native photo resolution. |
+| `mask_validation` | 80% | Verifies binary mask boundaries, calculates pixel area and coverage statistics. |
+| `asset_persistence` | 90% | Encodes and writes 8-bit single-channel PNG masks to `data/storage/masks/`. |
+| `scene_update` | 95% | Atomically updates the scene graph with entities, detection, and mask info. |
+| `completed` | 100% | Emits final `job_completed` event and notifies clients. |
+
+---
+
+## 4. Event Payload Structure
 
 ```typescript
 interface ProcessingEvent {
@@ -40,7 +62,7 @@ interface ProcessingEvent {
   eventType: ProcessingEventType;     // One of the defined event types
   timestamp: string;                  // ISO 8601 UTC timestamp
   sequenceNumber: number;             // Monotonically increasing integer (>= 1)
-  stageIdentifier: PipelineStage;     // Pipeline stage name
+  stageIdentifier: PipelineStage;     // Current pipeline stage name
   status: "pending" | "running" | "completed" | "failed" | "cancelled";
   progress?: number;                  // Progress fraction [0.0 - 1.0]
   message?: string;                   // Human-readable status description
@@ -52,16 +74,21 @@ interface ProcessingEvent {
 
 ---
 
-## 4. Pipeline Stages
+## 5. Event Flow Example
 
-The full engine defines nine successive pipeline stages:
-
-1. `image_analysis`: Photo validation, dimension extraction, color analysis.
-2. `person_detection`: Multi-person bounding box detection (Phase 02).
-3. `segmentation`: Instance alpha masks and background separation (Phase 03).
-4. `depth_estimation`: Monocular metric/relative scene depth (Phase 04).
-5. `spatial_photo`: Multiplane / depth-displacement spatial photo (Phase 05).
-6. `mesh_reconstruction`: 3D human polygon mesh generation (Phase 06).
-7. `skeleton_fitting`: Kinematic bone hierarchy fitting (Phase 08).
-8. `animation_preparation`: Skinning weight binding and IK rigging (Phase 08).
-9. `scene_assembly`: Final integration into the interactive 3D scene (Phase 09).
+1. **Client Triggers Analysis**:
+   `POST /api/v1/pipeline/analyze` with `{ "sceneId": "...", "assetId": "..." }`
+   Response: `{ "jobId": "...", "status": "accepted" }`
+2. **Seq #1 (`job_accepted`)**: Job registered with sequence `1`.
+3. **Seq #2 (`stage_started`)**: `image_validation` begins.
+4. **Seq #3 (`stage_completed`)**: `image_validation` succeeds.
+5. **Seq #4 (`stage_started`)**: `image_preparation` begins.
+6. ...
+7. **Seq #7 (`stage_started`)**: `person_detection` running on Apple Silicon MPS / CUDA.
+8. **Seq #8 (`stage_completed`)**: Found 2 people.
+9. **Seq #9 (`stage_started`)**: `instance_segmentation` generating masks.
+10. **Seq #10 (`asset_ready`)**: Mask saved for `person-001`.
+11. **Seq #11 (`asset_ready`)**: Mask saved for `person-002`.
+12. **Seq #12 (`stage_completed`)**: Masks validated.
+13. **Seq #13 (`stage_completed`)**: Scene updated.
+14. **Seq #14 (`job_completed`)**: Pipeline complete.

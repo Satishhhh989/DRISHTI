@@ -34,3 +34,4 @@ export function useApiHealth() {
 
   return { apiConnected };
 }
+

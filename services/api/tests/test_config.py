@@ -13,3 +13,4 @@ def test_cors_origins_parsing():
     cfg = Settings(CORS_ORIGINS="http://localhost:3000, http://127.0.0.1:3000")
     assert "http://localhost:3000" in cfg.cors_origins
     assert "http://127.0.0.1:3000" in cfg.cors_origins
+

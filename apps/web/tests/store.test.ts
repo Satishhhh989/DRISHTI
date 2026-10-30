@@ -31,18 +31,36 @@ describe("Frontend Stores", () => {
     expect(updated.activeRepresentation).toBe("photo");
   });
 
-  it("switches representation mode in scene store", () => {
+  it("switches visualization and representation modes in scene store", () => {
     const store = useSceneStore.getState();
-    expect(store.activeRepresentation).toBe("photo");
 
-    store.setActiveRepresentation("wireframe");
+    store.setVisualizationMode("detection");
+    expect(useSceneStore.getState().visualizationMode).toBe("detection");
+
+    store.setVisualizationMode("segmentation");
+    expect(useSceneStore.getState().visualizationMode).toBe("segmentation");
+
+    store.setVisualizationMode("original");
+    expect(useSceneStore.getState().visualizationMode).toBe("original");
+
+    store.setVisualizationMode("wireframe");
     expect(useSceneStore.getState().activeRepresentation).toBe("wireframe");
 
-    store.setActiveRepresentation("solid3d");
+    store.setVisualizationMode("solid3d");
     expect(useSceneStore.getState().activeRepresentation).toBe("solid3d");
   });
 
-  it("manages UI store toggles and errors", () => {
+  it("updates analysis progress state", () => {
+    const store = useSceneStore.getState();
+    store.setAnalysisState(true, "Detecting people...", 0.4);
+
+    const updated = useSceneStore.getState();
+    expect(updated.isAnalyzing).toBe(true);
+    expect(updated.currentStageMessage).toBe("Detecting people...");
+    expect(updated.analysisProgress).toBe(0.4);
+  });
+
+  it("manages UI store toggles and entity selection", () => {
     const ui = useUIStore.getState();
     expect(ui.showGrid).toBe(true);
     expect(ui.isInspectorOpen).toBe(true);
@@ -52,6 +70,9 @@ describe("Frontend Stores", () => {
 
     ui.toggleInspector();
     expect(useUIStore.getState().isInspectorOpen).toBe(false);
+
+    ui.selectEntity("person-123");
+    expect(useUIStore.getState().selectedEntityId).toBe("person-123");
 
     ui.setError("Failed to parse image file");
     expect(useUIStore.getState().errorMessage).toBe("Failed to parse image file");

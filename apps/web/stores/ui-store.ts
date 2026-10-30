@@ -43,3 +43,4 @@ export const useUIStore = create<UIState>((set) => ({
   setError: (msg) => set({ errorMessage: msg }),
   setStatusNotice: (notice) => set({ statusNotice: notice }),
 }));
+

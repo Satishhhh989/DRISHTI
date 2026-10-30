@@ -53,3 +53,4 @@ def test_event_with_asset_reference():
     )
     assert evt.asset_reference is not None
     assert evt.asset_reference.asset_type == "segmentation_mask"
+

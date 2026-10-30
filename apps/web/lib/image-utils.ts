@@ -32,3 +32,4 @@ export function getImageDimensions(file: File): Promise<ImageDimensions> {
     img.src = url;
   });
 }
+

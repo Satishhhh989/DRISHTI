@@ -28,3 +28,4 @@ export interface AssetMetadata {
   } | null;
   formatDetails?: Record<string, unknown>;
 }
+

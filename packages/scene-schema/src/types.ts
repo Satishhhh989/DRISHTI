@@ -1,9 +1,9 @@
 /**
- * PHOTO → 3D ENGINE - Scene Schema Types
- * Version 1.0.0
+ * DRISHTI - Scene Schema Types
+ * Version 1.1.0 (Phase 02: Image Intelligence & Person Segmentation)
  * 
- * Formal typed schema representation for scenes, entities, representations,
- * and coordinate transforms.
+ * Formal typed schema representation for scenes, entities, detections,
+ * segmentations, representations, and coordinate transforms.
  */
 
 export const CURRENT_SCHEMA_VERSION = "1.0.0";
@@ -84,6 +84,26 @@ export interface AnimationState {
   loop: boolean;
 }
 
+export interface DetectionInfo {
+  confidence: number;
+  boundingBox: BoundingBox2D;
+  pixelBox: [number, number, number, number]; // [xMin, yMin, xMax, yMax] in original image pixels
+  model: string;
+  detectedAt: string;
+  status: "ready" | "failed";
+}
+
+export interface SegmentationInfo {
+  status: "unstarted" | "processing" | "ready" | "failed";
+  maskAssetId?: string | null;
+  maskUri?: string | null;
+  confidence?: number;
+  model?: string;
+  segmentedAt?: string;
+  pixelCount?: number;
+  error?: string | null;
+}
+
 export interface SceneEntity {
   id: string;
   entityType: EntityType;
@@ -98,6 +118,8 @@ export interface SceneEntity {
   visibility: boolean;
   reconstructionStatus: ReconstructionStatus;
   confidence?: ConfidenceMetadata;
+  detection?: DetectionInfo;
+  segmentation?: SegmentationInfo;
 }
 
 export type RepresentationStatus = 
@@ -108,6 +130,8 @@ export type RepresentationStatus =
   | "failed";
 
 export type RepresentationMode = "photo" | "wireframe" | "solid3d";
+
+export type VisualizationMode = "original" | "detection" | "segmentation" | "wireframe" | "solid3d";
 
 export interface RepresentationAsset {
   status: RepresentationStatus;

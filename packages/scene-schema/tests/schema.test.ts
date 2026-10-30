@@ -128,3 +128,4 @@ describe("Scene Schema Validation", () => {
     expect(result.errors.some(e => e.code === "DUPLICATE_ID")).toBe(true);
   });
 });
+

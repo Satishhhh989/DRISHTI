@@ -1,7 +1,8 @@
-"""PHOTO → 3D ENGINE - Local Asset Storage Engine
+"""DRISHTI - Local Asset Storage Engine
 
-Guarantees path safety, prevents directory traversal, and enforces
-category-based file separation under the configured local storage root.
+Guarantees path safety, prevents directory traversal, enforces
+category-based file separation under the configured local storage root,
+and validates image integrity.
 """
 
 import hashlib
@@ -12,8 +13,9 @@ from pathlib import Path
 from typing import Dict, List, Optional
 from PIL import Image
 
+from app.assets.validation import validate_image_file
 from app.core.config import settings
-from app.core.errors import NotFoundError, StorageSecurityError
+from app.core.errors import NotFoundError, StorageSecurityError, ValidationAppError
 from app.core.logging import logger
 from app.schemas.assets import AssetCategory, AssetDimensions, AssetMetadata
 
@@ -69,7 +71,7 @@ class LocalAssetStore:
     ) -> AssetMetadata:
         """Stores a binary asset file safely and records its validated metadata."""
         if len(content) > settings.max_upload_size_bytes:
-            raise ValueError(
+            raise ValidationAppError(
                 f"File size exceeds maximum permitted limit ({settings.max_upload_size_mb} MB)"
             )
 
@@ -79,27 +81,37 @@ class LocalAssetStore:
         relative_path = Path(dir_name) / f"{asset_id}_{clean_name}"
         target_path = self._resolve_safe_path(relative_path)
 
+        dimensions: Optional[AssetDimensions] = None
+        effective_mime = mime_type
+
+        # Validate original photos strictly
+        if category == "original_photo":
+            img_info = validate_image_file(content, original_filename)
+            dimensions = AssetDimensions(width=img_info.width, height=img_info.height)
+            effective_mime = img_info.mime_type
+            # If normalization occurred (e.g. EXIF orientation transposition)
+            if img_info.normalized_bytes is not None:
+                content = img_info.normalized_bytes
+
+        elif category in ("segmentation_mask", "depth_map", "texture"):
+            try:
+                with Image.open(io.BytesIO(content)) as img:
+                    dimensions = AssetDimensions(width=img.width, height=img.height)
+            except Exception as e:
+                logger.debug(f"Could not extract dimensions for {original_filename}: {e}")
+
         # Compute SHA256 checksum
         checksum = hashlib.sha256(content).hexdigest()
 
         # Write file
         target_path.write_bytes(content)
 
-        # Inspect dimensions for images
-        dimensions: Optional[AssetDimensions] = None
-        if category in ("original_photo", "segmentation_mask", "depth_map", "texture"):
-            try:
-                with Image.open(io.BytesIO(content)) as img:
-                    dimensions = AssetDimensions(width=img.width, height=img.height)
-            except Exception as e:
-                logger.debug(f"Could not extract image dimensions for {original_filename}: {e}")
-
         meta = AssetMetadata(
             asset_id=asset_id,
             category=category,
             filename=original_filename,
             relative_path=str(relative_path),
-            mime_type=mime_type,
+            mime_type=effective_mime,
             size_bytes=len(content),
             checksum_sha256=checksum,
             scene_id=scene_id,

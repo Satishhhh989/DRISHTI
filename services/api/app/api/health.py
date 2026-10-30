@@ -27,3 +27,4 @@ async def get_health() -> HealthResponse:
         timestamp=datetime.now(timezone.utc).isoformat(),
         storage_available=storage_ok,
     )
+

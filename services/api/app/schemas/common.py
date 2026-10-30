@@ -62,3 +62,4 @@ class CoordinateSystemInfo(BaseModel):
     forward_axis: Literal["+Z"] = "+Z"
     right_axis: Literal["+X"] = "+X"
     unit: Literal["meters"] = "meters"
+

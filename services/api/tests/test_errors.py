@@ -24,3 +24,4 @@ async def test_validation_error_response():
         # Invalid body to /scenes
         response = await client.post("/api/v1/scenes", json={})
         assert response.status_code == 422
+

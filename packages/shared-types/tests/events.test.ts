@@ -52,3 +52,4 @@ describe("Processing Event Types and Contracts", () => {
     expect(errorEvent.error?.code).toBe("NO_PEOPLE_DETECTED");
   });
 });
+

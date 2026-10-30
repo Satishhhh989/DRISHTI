@@ -12,3 +12,4 @@ fi
 export PYTHONPATH="$DIR/services/api"
 echo "Running backend test suite (pytest)..."
 .venv/bin/pytest services/api/tests -v
+

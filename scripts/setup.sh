@@ -42,3 +42,4 @@ mkdir -p data/storage/exports
 
 echo ""
 echo "Setup complete! Run 'pnpm dev' or 'bash scripts/dev.sh' to start."
+

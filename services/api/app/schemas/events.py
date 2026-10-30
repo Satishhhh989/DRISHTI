@@ -1,5 +1,5 @@
-"""PHOTO → 3D ENGINE - Processing Event Contract Models
-Version 1.0.0
+"""DRISHTI - Processing Event Contract Models
+Version 1.1.0 (Phase 02: Image Intelligence & Person Segmentation)
 """
 
 from datetime import datetime, timezone
@@ -20,8 +20,16 @@ ProcessingEventType = Literal[
 
 PipelineStageIdentifier = Literal[
     "image_analysis",
+    "image_validation",
+    "image_preparation",
     "person_detection",
+    "detection_validation",
     "segmentation",
+    "instance_segmentation",
+    "mask_validation",
+    "asset_persistence",
+    "scene_update",
+    "completed",
     "depth_estimation",
     "spatial_photo",
     "mesh_reconstruction",

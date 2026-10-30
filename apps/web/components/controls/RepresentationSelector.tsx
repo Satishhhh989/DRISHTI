@@ -1,38 +1,41 @@
 "use client";
 
 import React from "react";
-import { RepresentationMode } from "@photo-to-3d/scene-schema";
+import { VisualizationMode } from "@photo-to-3d/scene-schema";
 import { useSceneStore } from "@/stores/scene-store";
 import styles from "./RepresentationSelector.module.css";
 
 interface ModeOption {
-  id: RepresentationMode;
+  id: VisualizationMode;
   label: string;
   badge?: string;
+  testId: string;
 }
 
 const MODES: ModeOption[] = [
-  { id: "photo", label: "Photo" },
-  { id: "wireframe", label: "Wireframe", badge: "P06" },
-  { id: "solid3d", label: "3D Solid", badge: "P06" },
+  { id: "original", label: "Original", testId: "mode-photo" },
+  { id: "detection", label: "Detection", testId: "mode-detection" },
+  { id: "segmentation", label: "Segmentation", testId: "mode-segmentation" },
+  { id: "wireframe", label: "Wireframe", badge: "P06", testId: "mode-wireframe" },
+  { id: "solid3d", label: "3D Solid", badge: "P06", testId: "mode-solid3d" },
 ];
 
 export const RepresentationSelector: React.FC = () => {
-  const activeRepresentation = useSceneStore((state) => state.activeRepresentation);
-  const setActiveRepresentation = useSceneStore((state) => state.setActiveRepresentation);
+  const visualizationMode = useSceneStore((state) => state.visualizationMode);
+  const setVisualizationMode = useSceneStore((state) => state.setVisualizationMode);
 
   return (
-    <nav className={styles.container} aria-label="Representation Mode">
+    <nav className={styles.container} aria-label="Visualization and Representation Mode">
       {MODES.map((mode) => {
-        const isActive = activeRepresentation === mode.id;
+        const isActive = visualizationMode === mode.id;
         return (
           <button
             key={mode.id}
             type="button"
             className={`${styles.tab} ${isActive ? styles.active : ""}`}
-            onClick={() => setActiveRepresentation(mode.id)}
+            onClick={() => setVisualizationMode(mode.id)}
             aria-pressed={isActive}
-            data-testid={`mode-${mode.id}`}
+            data-testid={mode.testId}
           >
             <span>{mode.label}</span>
             {mode.badge && <span className={styles.badge}>{mode.badge}</span>}

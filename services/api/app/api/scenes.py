@@ -40,3 +40,4 @@ async def create_scene(request: CreateSceneRequest) -> Scene:
 @router.get("/{scene_id}", response_model=Scene)
 async def get_scene(scene_id: str) -> Scene:
     return scene_manager.get_scene(scene_id)
+

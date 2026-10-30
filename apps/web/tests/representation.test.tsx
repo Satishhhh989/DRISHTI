@@ -4,9 +4,37 @@ import { describe, it, expect, beforeEach, vi } from "vitest";
 import WorkspacePage from "../app/page";
 import { useSceneStore } from "../stores/scene-store";
 
-describe("Representation Mode Switching", () => {
+describe("Visualization and Representation Mode Switching", () => {
   beforeEach(() => {
     useSceneStore.getState().clearScene();
+  });
+
+  it("switches between detection, segmentation, and original modes", async () => {
+    await act(async () => {
+      render(<WorkspacePage />);
+    });
+
+    const detectionBtn = screen.getByTestId("mode-detection");
+    const segmentationBtn = screen.getByTestId("mode-segmentation");
+    const originalBtn = screen.getByTestId("mode-photo");
+
+    // Click Detection
+    await act(async () => {
+      fireEvent.click(detectionBtn);
+    });
+    expect(detectionBtn).toHaveAttribute("aria-pressed", "true");
+
+    // Click Segmentation
+    await act(async () => {
+      fireEvent.click(segmentationBtn);
+    });
+    expect(segmentationBtn).toHaveAttribute("aria-pressed", "true");
+
+    // Click Original
+    await act(async () => {
+      fireEvent.click(originalBtn);
+    });
+    expect(originalBtn).toHaveAttribute("aria-pressed", "true");
   });
 
   it("displays honest placeholder when selecting Wireframe mode", async () => {

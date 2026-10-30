@@ -67,3 +67,4 @@ export class ViewportErrorBoundary extends Component<Props, State> {
     return this.props.children;
   }
 }
+

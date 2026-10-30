@@ -59,3 +59,4 @@ async def get_asset_file(asset_id: str):
         media_type=meta.mime_type,
         filename=meta.filename
     )
+

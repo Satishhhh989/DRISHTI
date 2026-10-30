@@ -16,3 +16,4 @@ async def test_health_endpoint():
         assert data["version"] == "0.1.0"
         assert "timestamp" in data
         assert data["storage_available"] is True
+

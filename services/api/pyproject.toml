@@ -1,7 +1,7 @@
 [project]
 name = "photo-to-3d-api"
-version = "0.1.0"
-description = "Local-first backend service for PHOTO → 3D ENGINE"
+version = "0.2.0"
+description = "Local-first backend service for DRISHTI"
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
@@ -11,6 +11,9 @@ dependencies = [
     "pydantic-settings>=2.4.0",
     "python-multipart>=0.0.9",
     "pillow>=10.4.0",
+    "torch>=2.2.0",
+    "torchvision>=0.17.0",
+    "ultralytics>=8.1.0",
 ]
 
 [project.optional-dependencies]

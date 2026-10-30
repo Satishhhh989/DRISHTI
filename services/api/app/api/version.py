@@ -21,3 +21,4 @@ async def get_version() -> VersionResponse:
         api_version=settings.api_version,
         schema_version=settings.schema_version,
     )
+

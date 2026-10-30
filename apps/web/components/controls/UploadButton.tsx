@@ -21,6 +21,7 @@ export const UploadButton: React.FC<UploadButtonProps> = ({
   const setIsUploading = useSceneStore((state) => state.setIsUploading);
   const setLocalPhoto = useSceneStore((state) => state.setLocalPhoto);
   const setScene = useSceneStore((state) => state.setScene);
+  const setAnalysisState = useSceneStore((state) => state.setAnalysisState);
   const setError = useUIStore((state) => state.setError);
   const setStatusNotice = useUIStore((state) => state.setStatusNotice);
 
@@ -44,8 +45,52 @@ export const UploadButton: React.FC<UploadButtonProps> = ({
         const res = await apiClient.uploadPhoto(file);
         if (res.scene) {
           setScene(res.scene);
+
+          // 3. Automatically trigger Phase 02 person detection & segmentation
+          try {
+            setAnalysisState(true, "Detecting and segmenting people...", 0.1);
+            setStatusNotice("Running local neural network person detection...");
+            const job = await apiClient.triggerAnalysis(res.scene.id);
+
+            let completed = false;
+            let lastSeq = 0;
+            let iterations = 0;
+
+            while (!completed && iterations < 30) {
+              iterations++;
+              await new Promise((r) => setTimeout(r, 600));
+              try {
+                const eventData = await apiClient.getJobEvents(job.job_id, lastSeq);
+                if (eventData.events && eventData.events.length > 0) {
+                  for (const ev of eventData.events) {
+                    lastSeq = Math.max(lastSeq, ev.sequence_number);
+                    if (ev.message) {
+                      setAnalysisState(true, ev.message, ev.progress || 0.5);
+                      setStatusNotice(ev.message);
+                    }
+                    if (ev.event_type === "job_completed" || ev.event_type === "stage_failed") {
+                      completed = true;
+                    }
+                  }
+                }
+              } catch (e) {
+                // Ignore transient event poll error
+              }
+            }
+
+            const refreshed = await apiClient.getScene(res.scene.id);
+            setScene(refreshed);
+            setAnalysisState(false, null, 1.0);
+            setStatusNotice(
+              refreshed.entities.length > 0
+                ? `Analysis complete: ${refreshed.entities.length} people identified.`
+                : "Analysis complete: No people detected."
+            );
+          } catch (analysisErr: unknown) {
+            console.warn("Analysis pipeline error:", analysisErr);
+            setAnalysisState(false, null, 0);
+          }
         }
-        setStatusNotice("Photograph loaded into 3D scene.");
       } catch (err: unknown) {
         // Fall back gracefully to client-side session without failing the user
         const msg = err instanceof Error ? err.message : "API offline";
@@ -85,7 +130,7 @@ export const UploadButton: React.FC<UploadButtonProps> = ({
           <polyline points="17 8 12 3 7 8" />
           <line x1="12" y1="3" x2="12" y2="15" />
         </svg>
-        <span>{isUploading ? "Loading..." : label}</span>
+        <span>{isUploading ? "Processing..." : label}</span>
       </button>
     </>
   );

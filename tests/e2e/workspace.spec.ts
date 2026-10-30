@@ -1,6 +1,6 @@
 import { test, expect } from "@playwright/test";
 
-test.describe("Phase 01: Workspace & Viewport E2E Verification", () => {
+test.describe("Phase 01 & 02: Workspace & Viewport E2E Verification", () => {
   test("1. The application opens and renders workspace", async ({ page }) => {
     await page.goto("/");
     await expect(page.locator('[data-testid="workspace-root"]')).toBeVisible();
@@ -10,11 +10,9 @@ test.describe("Phase 01: Workspace & Viewport E2E Verification", () => {
 
   test("2. The upload control is visible in top bar and empty viewport", async ({ page }) => {
     await page.goto("/");
-    // Upload button in top bar
     const topBarUploadBtn = page.getByRole("button", { name: /Upload Photo/i });
     await expect(topBarUploadBtn).toBeVisible();
 
-    // Empty state viewport card and button
     const emptyState = page.locator('[data-testid="empty-viewport-state"]');
     await expect(emptyState).toBeVisible();
     await expect(page.getByRole("heading", { name: "Upload a Photograph" })).toBeVisible();
@@ -52,11 +50,41 @@ test.describe("Phase 01: Workspace & Viewport E2E Verification", () => {
     await expect(solidNotice).toBeVisible();
     await expect(solidNotice).toContainText("Solid volumetric human mesh not generated yet");
 
-    // Return to Photo mode
+    // Return to Original photo mode
     const photoTab = page.locator('[data-testid="mode-photo"]');
     await photoTab.click();
     await expect(photoTab).toHaveAttribute("aria-pressed", "true");
     await expect(wireframeNotice).not.toBeVisible();
     await expect(solidNotice).not.toBeVisible();
+  });
+
+  test("5. Phase 02 visualization controls (Original, Detection, Segmentation) are functional", async ({ page }) => {
+    await page.goto("/");
+
+    const detectionTab = page.locator('[data-testid="mode-detection"]');
+    const segmentationTab = page.locator('[data-testid="mode-segmentation"]');
+    const originalTab = page.locator('[data-testid="mode-photo"]');
+
+    await expect(detectionTab).toBeVisible();
+    await expect(segmentationTab).toBeVisible();
+    await expect(originalTab).toBeVisible();
+
+    await detectionTab.click();
+    await expect(detectionTab).toHaveAttribute("aria-pressed", "true");
+
+    await segmentationTab.click();
+    await expect(segmentationTab).toHaveAttribute("aria-pressed", "true");
+
+    await originalTab.click();
+    await expect(originalTab).toHaveAttribute("aria-pressed", "true");
+  });
+
+  test("6. Contextual panel reflects empty scene state honestly", async ({ page }) => {
+    await page.goto("/");
+    const contextualPanel = page.locator('[data-testid="contextual-panel"]');
+    await expect(contextualPanel).toBeVisible();
+    await expect(contextualPanel).toContainText("Scene Summary");
+    await expect(contextualPanel).toContainText("Detected People");
+    await expect(page.locator('[data-testid="zero-person-notice"]')).toBeVisible();
   });
 });

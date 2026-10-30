@@ -46,3 +46,4 @@ def test_non_existent_asset(tmp_path: Path):
     store = LocalAssetStore(root=tmp_path)
     with pytest.raises(NotFoundError):
         store.get_metadata("non-existent-id")
+

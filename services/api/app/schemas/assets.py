@@ -36,3 +36,4 @@ class AssetMetadata(BaseModel):
     entity_id: Optional[str] = None
     dimensions: Optional[AssetDimensions] = None
     format_details: Optional[Dict[str, Any]] = None
+

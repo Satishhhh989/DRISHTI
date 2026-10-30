@@ -1,47 +1,81 @@
-"""PHOTO → 3D ENGINE - Modular AI Inference Interfaces
+"""DRISHTI - Modular AI Inference Interfaces
 
 Defines the pluggable contracts for Phase 02 through Phase 10 AI inference stages.
-No heavy AI models or weights are loaded in Phase 01.
 """
 
 from abc import ABC, abstractmethod
-from typing import List, Optional
+from pathlib import Path
+from typing import List, Optional, Tuple
 from app.schemas.assets import AssetMetadata
 from app.schemas.common import BoundingBox2D
 from app.schemas.scene import SceneEntity
 
 
 class DetectionResult:
+    """Standardized multi-person detection result."""
+
     def __init__(
         self,
         bounding_box: BoundingBox2D,
+        pixel_box: Tuple[float, float, float, float],
         confidence: float,
-        label: str = "person"
+        entity_id: str,
+        label: str = "person",
+        model: str = "yolov8n-seg",
     ):
         self.bounding_box = bounding_box
+        self.pixel_box = pixel_box
         self.confidence = confidence
+        self.entity_id = entity_id
         self.label = label
+        self.model = model
+
+
+class SegmentationResult:
+    """Standardized individual person segmentation mask result."""
+
+    def __init__(
+        self,
+        entity_id: str,
+        mask_png_bytes: bytes,
+        confidence: float,
+        pixel_count: int,
+        width: int,
+        height: int,
+        model: str = "yolov8n-seg",
+    ):
+        self.entity_id = entity_id
+        self.mask_png_bytes = mask_png_bytes
+        self.confidence = confidence
+        self.pixel_count = pixel_count
+        self.width = width
+        self.height = height
+        self.model = model
 
 
 class IPersonDetector(ABC):
     """Interface for multi-person detection (Phase 02)."""
 
     @abstractmethod
-    async def detect_people(self, photo_asset: AssetMetadata) -> List[DetectionResult]:
+    def detect_people(
+        self,
+        image_path: Path,
+        confidence_threshold: float = 0.35,
+    ) -> List[DetectionResult]:
         """Detects all human subjects within the source photograph."""
         pass
 
 
 class ISegmentor(ABC):
-    """Interface for person instance segmentation and background matting (Phase 03)."""
+    """Interface for person instance segmentation (Phase 02/03)."""
 
     @abstractmethod
-    async def segment_person(
+    def segment_people(
         self,
-        photo_asset: AssetMetadata,
-        detection: DetectionResult
-    ) -> AssetMetadata:
-        """Produces a high-resolution alpha segmentation mask asset."""
+        image_path: Path,
+        detections: List[DetectionResult],
+    ) -> List[SegmentationResult]:
+        """Produces individual binary alpha masks for each detected person."""
         pass
 
 
