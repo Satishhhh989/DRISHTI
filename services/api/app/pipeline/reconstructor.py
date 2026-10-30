@@ -502,6 +502,15 @@ class SpinHumanReconstructor(HumanReconstructor):
             vertices_tensor = self.smpl(pred_pose, pred_shape)
 
         vertices = vertices_tensor.detach().cpu().numpy().astype(np.float32)
+
+        # Convert from OpenCV camera coordinate convention (+X right, +Y down, +Z into depth)
+        # to DRISHTI / Three.js canonical world coordinates (+X right, +Y UP, +Z TOWARD camera):
+        # [X', Y', Z'] = [X_cam, -Y_cam, -Z_cam]
+        # This rigid rotation (180 deg around X-axis) has det(R) = +1.0, preserving
+        # right-handedness, triangle winding order, and surface orientation.
+        vertices[:, 1] = -vertices[:, 1]
+        vertices[:, 2] = -vertices[:, 2]
+
         faces = self.faces.copy()
 
         # Validate geometry

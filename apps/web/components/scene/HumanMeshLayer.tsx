@@ -174,14 +174,14 @@ const SingleHumanMesh: React.FC<HumanMeshProps> = ({
     });
   }, [modelGroup, isWireframe, isSelected]);
 
-  const rawPos = entity.reconstruction?.transform?.position || entity.transform?.position;
+  const rawPos = entity.transform?.position || entity.reconstruction?.transform?.position;
   const basePosition: [number, number, number] = Array.isArray(rawPos)
     ? [rawPos[0], rawPos[1], rawPos[2]]
     : rawPos
     ? [rawPos.x, rawPos.y, rawPos.z]
     : [0, 0, 0];
 
-  const rawScale = entity.reconstruction?.transform?.scale || entity.transform?.scale;
+  const rawScale = entity.transform?.scale || entity.reconstruction?.transform?.scale;
   const baseScale: [number, number, number] = Array.isArray(rawScale)
     ? [rawScale[0], rawScale[1], rawScale[2]]
     : rawScale

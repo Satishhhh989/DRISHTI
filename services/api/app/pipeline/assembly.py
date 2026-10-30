@@ -183,14 +183,33 @@ class SceneAssemblyEngine:
             # Horizontal placement (X)
             pos_x = (cx - 0.5) * plane_w
 
-            # Vertical placement (Y)
-            # Center height of torso roughly at image centroid
-            pos_y = max(0.5, (1.0 - cy) * plane_h)
+            # Scale and vertical offset estimation
+            mesh_center_y = 0.15  # Default SMPL pelvis-to-center offset in canonical space
+            mesh_h = 1.70
+            if (
+                entity.reconstruction
+                and entity.reconstruction.geometry_metadata
+                and entity.reconstruction.geometry_metadata.bounds
+            ):
+                bounds = entity.reconstruction.geometry_metadata.bounds
+                v_min_y = float(bounds.min[1])
+                v_max_y = float(bounds.max[1])
+                mesh_h = max(0.2, v_max_y - v_min_y)
+                mesh_center_y = (v_max_y + v_min_y) / 2.0
 
-            # Depth placement (Z)
+            raw_scale = h_box / mesh_h
+            clamped_scale = max(
+                self.config.min_scale_factor,
+                min(self.config.max_scale_factor, raw_scale)
+            )
+
+            # Center height aligned with image centroid, accounting for pelvis offset
+            pos_y = (1.0 - cy) * plane_h - (mesh_center_y * clamped_scale)
+
+            # Depth placement (Z) in front of reference plane at Z=-0.6
             if entity.depth and entity.depth.median_proximity is not None:
                 prox = max(0.0, min(1.0, entity.depth.median_proximity))
-                # Map proximity [0, 1] to [-depth_range/2, +depth_range/2]
+                # Map proximity [0, 1] across depth range centered at 0.0
                 pos_z = (prox - 0.5) * self.config.depth_range_meters
                 depth_source = "relative_median_proximity"
                 relative_proximity_val = prox
@@ -199,14 +218,6 @@ class SceneAssemblyEngine:
                 depth_source = "fallback_plane"
                 relative_proximity_val = None
                 uncertainty_flags.append("missing_depth")
-
-            # Scale estimation: preserve anatomical scale, adjusted for perspective
-            base_human_h = 1.65  # reference height
-            raw_scale = h_box / base_human_h
-            clamped_scale = max(
-                self.config.min_scale_factor,
-                min(self.config.max_scale_factor, raw_scale)
-            )
 
             # Validate numeric sanity
             if not validate_transform_values((pos_x, pos_y, pos_z), (clamped_scale, clamped_scale, clamped_scale)):
@@ -335,7 +346,7 @@ class SceneAssemblyEngine:
             name="Source Photo Reference Plane",
             node_type="reference_plane",
             transform=Transform(
-                position=Vector3D(x=0.0, y=plane_h / 2.0, z=0.0),
+                position=Vector3D(x=0.0, y=plane_h / 2.0, z=-0.6),
                 rotation=EulerRotation(x=0.0, y=0.0, z=0.0),
                 scale=Vector3D(x=plane_w, y=plane_h, z=1.0),
             ),

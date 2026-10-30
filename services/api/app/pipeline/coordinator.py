@@ -729,13 +729,36 @@ class PipelineCoordinator:
                             box_center_y = (box.y_min + box.y_max) / 2.0
 
                             # Map normalized 2D image coordinates to Three.js scene space
-                            pos_x = float((box_center_x - 0.5) * aspect * 2.0)
-                            pos_y = float((0.5 - box_center_y) * 2.0)
-                            # Use depth proximity if available to stagger people along Z
+                            plane_h = 2.0
+                            plane_w = plane_h * aspect
+                            pos_x = float((box_center_x - 0.5) * plane_w)
+
+                            # Mesh bounds and center offset in canonical space (+Y UP)
+                            v_min_y = float(rec_result.bounds_min[1])
+                            v_max_y = float(rec_result.bounds_max[1])
+                            mesh_h = max(0.2, v_max_y - v_min_y)
+                            mesh_center_y = (v_max_y + v_min_y) / 2.0
+
+                            # Scale mesh proportionally to detected bounding box height
+                            box_h = (box.y_max - box.y_min) * plane_h
+                            scale_val = float(np.clip(box_h / mesh_h, 0.5, 1.5))
+
+                            # Center mesh vertically with its 2D image-space detection box
+                            pos_y = float((1.0 - box_center_y) * plane_h - (mesh_center_y * scale_val))
+
+                            # Stagger along Z based on relative depth proximity in front of photo plane (Z=-0.6)
                             if depth_info and depth_info.median_proximity is not None:
-                                pos_z = float((depth_info.median_proximity - 0.5) * 0.4)
+                                prox = float(np.clip(depth_info.median_proximity, 0.0, 1.0))
+                                pos_z = float((prox - 0.5) * 0.4)
                             else:
                                 pos_z = 0.0
+
+                            entity_transform = Transform(
+                                position=Vector3D(x=round(pos_x, 4), y=round(pos_y, 4), z=round(pos_z, 4)),
+                                rotation=EulerRotation(x=0.0, y=0.0, z=0.0),
+                                scale=Vector3D(x=round(scale_val, 4), y=round(scale_val, 4), z=round(scale_val, 4)),
+                            )
+                            entity.transform = entity_transform
 
                             entity.reconstruction = HumanReconstructionData(
                                 status="ready",
@@ -759,11 +782,7 @@ class PipelineCoordinator:
                                 coordinate_convention=CoordinateConvention(
                                     up="+Y", forward="+Z", right="+X", units="meters"
                                 ),
-                                transform=Transform(
-                                    position=Vector3D(x=pos_x, y=pos_y, z=pos_z),
-                                    rotation=EulerRotation(x=0.0, y=0.0, z=0.0),
-                                    scale=Vector3D(x=1.0, y=1.0, z=1.0),
-                                ),
+                                transform=entity_transform,
                                 texture_availability="none",
                                 quality_score=rec_result.quality_score,
                                 warnings=rec_result.warnings,
