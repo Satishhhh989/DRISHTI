@@ -5,7 +5,7 @@ DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )/.." && pwd )"
 cd "$DIR"
 
 echo "=================================================="
-echo "Starting PHOTO → 3D ENGINE (Phase 01: Foundation)"
+echo "Starting DRISHTI: PHOTO → 3D ENGINE (v1.0.0)"
 echo "=================================================="
 
 # Cleanup handler
