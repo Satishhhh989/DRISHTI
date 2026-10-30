@@ -50,6 +50,15 @@ interface SceneState {
   ) => void;
   cancelActiveJob: () => Promise<void>;
   toggleEntityVisibility: (entityId: string) => void;
+  setEntityAnimation: (
+    entityId: string,
+    clipName: string | null,
+    isPlaying: boolean,
+    playbackSpeed?: number,
+    loop?: boolean
+  ) => void;
+  toggleEntitySkeleton: (entityId: string) => void;
+  resetEntityPose: (entityId: string) => void;
   clearScene: () => void;
 }
 
@@ -228,6 +237,65 @@ export const useSceneStore = create<SceneState>((set, get) => ({
     const updatedEntities = currentScene.entities.map((e) =>
       e.id === entityId ? { ...e, visibility: e.visibility === false ? true : false } : e
     );
+    set({
+      currentScene: {
+        ...currentScene,
+        entities: updatedEntities,
+      },
+    });
+  },
+
+  setEntityAnimation: (entityId, clipName, isPlaying, playbackSpeed = 1.0, loop = true) => {
+    const { currentScene } = get();
+    if (!currentScene) return;
+    const updatedEntities = currentScene.entities.map((e) => {
+      if (e.id !== entityId) return e;
+      return {
+        ...e,
+        animationState: {
+          ...e.animationState,
+          currentClip: clipName !== undefined ? clipName : e.animationState?.currentClip ?? null,
+          isPlaying,
+          playbackSpeed: playbackSpeed ?? e.animationState?.playbackSpeed ?? 1.0,
+          loop: loop ?? e.animationState?.loop ?? true,
+        },
+      };
+    });
+    set({
+      currentScene: {
+        ...currentScene,
+        entities: updatedEntities,
+      },
+    });
+  },
+
+  toggleEntitySkeleton: (entityId) => {
+    const { currentScene } = get();
+    if (!currentScene) return;
+    const updatedEntities = currentScene.entities.map((e) =>
+      e.id === entityId ? { ...e, showSkeleton: !e.showSkeleton } : e
+    );
+    set({
+      currentScene: {
+        ...currentScene,
+        entities: updatedEntities,
+      },
+    });
+  },
+
+  resetEntityPose: (entityId) => {
+    const { currentScene } = get();
+    if (!currentScene) return;
+    const updatedEntities = currentScene.entities.map((e) => {
+      if (e.id !== entityId) return e;
+      return {
+        ...e,
+        animationState: {
+          ...e.animationState,
+          isPlaying: false,
+        },
+      };
+    });
     set({
       currentScene: {
         ...currentScene,

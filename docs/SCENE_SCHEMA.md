@@ -379,3 +379,89 @@ Enforced in both TypeScript (`packages/scene-schema`) and Python (`services/api/
 6. **Pixel Boxes**: Integer pixel boxes must satisfy $0 \le x_1 < x_2 \le \text{width}$ and $0 \le y_1 < y_2 \le \text{height}$.
 7. **Canonical Depth Proximity**: Normalized depth values and per-entity median proximity must remain strictly bounded within $[0.0, 1.0]$. Extreme values outside this range are rejected or clamped during normalization.
 8. **Scene Graph Consistency**: Every node referenced in `children` or `scene_node_id` must exist in `scene_graph.nodes`. The root node must exist and have `id == root_id`. Transform values must be finite numbers and scales strictly positive.
+9. **Skeleton Hierarchy Validation**: Kinematic skeletons must have exactly one root joint (`parent_id == None`), exactly 24 canonical joints, strictly positive bone lengths, no duplicate joint names or indices, no cycles, and finite 3D coordinates.
+10. **Skinning Weight Normalization**: Skinning weights must be non-negative ($\ge 0$), have at most 4 influences per vertex, with bone indices bounded in $[0, \text{boneCount} - 1]$, and weights summing to $1.0$ ($|1.0 - \sum w_i| < 10^{-4}$).
+
+---
+
+## 9. DRISHTI Motion, Skeleton & Rigging Specification (Phase 07)
+
+### 9.1 Kinematic Skeleton Schema (`SkeletonData`)
+
+```typescript
+interface SkeletonJoint {
+  id: string;                         // Canonical identifier (e.g. "pelvis", "left_knee")
+  name: string;                       // Human-readable title (e.g. "Left Knee")
+  index: number;                      // 0 to 23
+  parentId?: string | null;           // Parent joint ID or null for root
+  position: [number, number, number]; // [x, y, z] in local meters relative to root
+  rotation: [number, number, number, number]; // [qx, qy, qz, qw] orientation quaternion
+  confidence?: number;                // Estimated confidence [0.0, 1.0]
+  isObserved: boolean;                // Whether confirmed by 2D pose keypoint
+}
+
+interface BoneDefinition {
+  id: string;                         // Bone ID, e.g. "bone-pelvis-left_hip"
+  headJointId: string;                // Parent joint
+  tailJointId: string;                // Child joint
+  length: number;                     // Bone length in meters
+}
+
+interface SkeletonData {
+  id: string;                         // Unique skeleton identifier (e.g. "skel-person-001")
+  entityId: string;                   // Associated person entity
+  schemaVersion: "1.0.0";
+  rootJointId: string;                // "pelvis"
+  joints: SkeletonJoint[];            // Exactly 24 canonical joints
+  bones: BoneDefinition[];            // Exactly 23 canonical bones
+  coordinateConvention: CoordinateConvention;
+  source: "smpl_regressed" | "yolo_pose_projected" | "mock_anatomical";
+  isAligned: boolean;
+  alignmentTransform?: Transform;
+  validationStatus: "valid" | "incomplete" | "invalid";
+  validationErrors: string[];
+  createdAt: string;
+}
+```
+
+### 9.2 Mesh Rigging Schema (`RigData`)
+
+```typescript
+interface RigData {
+  id: string;                         // Unique rig identifier (e.g. "rig-person-001")
+  entityId: string;                   // Associated person entity
+  skeletonId: string;                 // Associated skeleton
+  meshAssetId?: string | null;
+  status: "rigged" | "unrigged" | "failed";
+  skinningMethod: "smpl_lbs_native" | "proximity_heat_weights" | "none";
+  boneCount: number;                  // 24
+  maxInfluencesPerVertex: number;     // 4 (hardware shader compatibility)
+  weightsNormalized: boolean;         // True (L1 norm = 1.0)
+  errorMessage?: string | null;
+  riggedAt?: string;
+}
+```
+
+### 9.3 Procedural Animation Clip Schema (`AnimationClipData`)
+
+```typescript
+interface JointTransformTrack {
+  jointId: string;                    // Target joint
+  timestamps: number[];               // Keyframe times in seconds
+  rotations: [number, number, number, number][]; // Quaternion [qx, qy, qz, qw]
+  positions?: [number, number, number][];
+}
+
+interface AnimationClipData {
+  id: string;                         // Unique clip ID (e.g. "clip-idle-person-001")
+  name: string;                       // "idle_breathing" | "torso_twist" | "arm_wave" | "gentle_walk"
+  targetEntityId: string;
+  targetSkeletonId: string;
+  durationSeconds: number;
+  isLooping: boolean;
+  fps: number;
+  provenance: "procedural";           // Explicitly notes non-recovered motion
+  tracks: JointTransformTrack[];
+  createdAt: string;
+}
+```

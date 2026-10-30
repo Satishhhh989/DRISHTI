@@ -26,6 +26,7 @@ DRISHTI relies on local neural network models stored in `data/models/`:
 1. **YOLOv8 Nano Segmentation** (`yolov8n-seg.pt`, ~6.7MB): Fast person detection and binary instance segmentation.
 2. **Depth Anything V2 Small** (`depth-anything-v2-small/`, ~99.2MB Safetensors): High-resolution monocular relative depth estimation.
 3. **SPIN Human Mesh Reconstruction** (`human_reconstruction/spin_model_checkpoint.pth.tar`, ~103MB + `human_reconstruction/SMPL_N_model.npz`, ~88MB): Parametric 3D human mesh estimation and SMPL neutral body linear blend skinning.
+4. **YOLOv8 Nano Pose** (`yolov8n-pose.pt`, ~6.5MB): 2D body pose estimation and 17-keypoint extraction.
 
 Check model status or trigger local download via the API:
 
@@ -64,11 +65,11 @@ bash scripts/test.sh
 This executes:
 1. `packages/scene-schema`: Vitest schema validation, representation availability, and contract tests (10 tests).
 2. `packages/shared-types`: Vitest event contract and DTO tests (2 tests).
-3. `apps/web`: Vitest component, store, event reducer, 3D mesh rendering, assembly inspector, and visualization tests (25 tests).
-4. `services/api`: Pytest backend test suite (unit tests, mock pipeline, real model MPS smoke tests, geometry validation, progressive event stream tests, scene assembly engine, and disk persistence tests) (69 tests).
-5. `tests/e2e`: Playwright browser-level end-to-end tests including Phase 06 scene assembly verification (10 tests).
+3. `apps/web`: Vitest component, store, event reducer, 3D mesh rendering, assembly inspector, skeleton overlay, motion controls, and visualization tests (27 tests).
+4. `services/api`: Pytest backend test suite (unit tests, mock pipeline, real model MPS smoke tests, geometry validation, progressive event stream tests, scene assembly engine, skeleton validation, pose estimation, rigging, procedural animation, and disk persistence tests) (88 tests).
+5. `tests/e2e`: Playwright browser-level end-to-end tests including Phase 07 motion stages and controls verification (11 tests).
 
-**Total Verified Tests: 116 passing.**
+**Total Verified Tests: 138 passing.**
 
 ### Running Individual Test Suites
 
@@ -80,16 +81,18 @@ bash scripts/test_backend.sh
 source .venv/bin/activate
 PYTHONPATH=services/api pytest services/api/tests -v
 
-# Scene Assembly & Persistence backend tests
-PYTHONPATH=services/api pytest services/api/tests/test_scene_assembly_engine.py -v
-PYTHONPATH=services/api pytest services/api/tests/test_scene_persistence.py -v
-PYTHONPATH=services/api pytest services/api/tests/test_pipeline_assembly.py -v
+# Motion Subsystem backend tests (Phase 07)
+PYTHONPATH=services/api pytest services/api/tests/test_skeleton_schema.py -v
+PYTHONPATH=services/api pytest services/api/tests/test_pose_estimator.py -v
+PYTHONPATH=services/api pytest services/api/tests/test_mesh_rigging.py -v
+PYTHONPATH=services/api pytest services/api/tests/test_procedural_animation.py -v
+PYTHONPATH=services/api pytest services/api/tests/test_pipeline_motion.py -v
 
 # Frontend tests (vitest)
 pnpm --filter @photo-to-3d/web test
 
-# Assembly UI component tests
-pnpm --filter @photo-to-3d/web test apps/web/tests/assembly-view.test.tsx
+# Motion UI component tests
+pnpm --filter @photo-to-3d/web test apps/web/tests/motion-view.test.tsx
 
 # Schema package tests
 pnpm --filter @photo-to-3d/scene-schema test
@@ -112,7 +115,7 @@ DRISHTI exposes dedicated endpoints for inspecting hardware acceleration, pipeli
 | `GET` | `/api/v1/pipeline/hardware` | Returns detected compute device (`mps`, `cuda`, `cpu`), device name, and allocation test status. |
 | `GET` | `/api/v1/pipeline/models` | Lists local model files, sizes, and readiness. |
 | `POST` | `/api/v1/pipeline/models/download` | Explicitly downloads default model weights with verification. |
-| `POST` | `/api/v1/pipeline/analyze` | Initiates the 14-stage image intelligence, depth, 3D reconstruction, and scene assembly pipeline. |
+| `POST` | `/api/v1/pipeline/analyze` | Initiates the 18-stage image intelligence, depth, 3D reconstruction, rigging, motion, and scene assembly pipeline. |
 | `GET` | `/api/v1/jobs/{job_id}` | Polls status, current stage, and progress of an active job. |
 | `GET` | `/api/v1/jobs/{job_id}/events` | Retrieves ordered, sequenced events since a given sequence number (`?since=...`). |
 | `GET` | `/api/v1/jobs/{job_id}/stream` | Server-Sent Events (SSE) stream (`text/event-stream`) with automatic `Last-Event-ID` catchup. |

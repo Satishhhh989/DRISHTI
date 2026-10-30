@@ -31,7 +31,7 @@ describe("Workspace Page", () => {
 
     // Branding in top bar
     expect(screen.getByText("PHOTO → 3D ENGINE")).toBeInTheDocument();
-    expect(screen.getByText(/Phase 0[1-6]/)).toBeInTheDocument();
+    expect(screen.getByText(/Phase 0[1-7]/)).toBeInTheDocument();
 
     // Mode options
     expect(screen.getByTestId("mode-photo")).toBeInTheDocument();

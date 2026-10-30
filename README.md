@@ -2,14 +2,24 @@
 
 A local-first AI-powered spatial reconstruction engine that transforms ordinary multi-person photographs into interactive, animated 3D scenes.
 
-Current Status: **Phase 06: Multi-Person Scene Assembly (Completed)**
+Current Status: **Phase 07: DRISHTI Motion (Completed)**
 
 ---
 
-## Capabilities (Phase 06)
+## Capabilities (Phase 07)
 
 - **Local-First AI Architecture**: Runs entirely offline on the user's machine without any external cloud vision APIs or telemetry.
 - **Hardware Acceleration**: Automatic capability discovery and execution on Apple Silicon Metal Performance Shaders (`mps`), NVIDIA GPU (`cuda`), and optimized CPU fallback.
+- **DRISHTI Motion Subsystem (Phase 07)**:
+  - **Canonical 24-Joint Kinematic Skeleton**: Formulates a standardized 24-joint human skeleton aligned with SMPL and standard anatomical topology (`pelvis` root, hips, spine, neck, head, shoulders, elbows, wrists, hands, knees, ankles, feet).
+  - **Structural Hierarchy Validation (`validate_skeleton_hierarchy`)**: Automated cycle detection, duplicate joint/index checks, missing parent validation, and non-finite coordinate assertions.
+  - **2D Pose Estimation & Multi-Person IoU Matching**: Integrates local YOLOv8-pose (`data/models/yolov8n-pose.pt`, 6.5MB) with automatic IoU bounding box association and confidence preservation, with offline `MockPoseEstimator` fallback.
+  - **3D Skeleton Fitting (`SkeletonFitter`)**: Regresses genuine 3D joint centers via SMPL joint regressor matrix ($J = J_{regressor} \cdot V_{6890}$) or anatomical bounding box landmarks, aligned at the pelvis origin $(0, 0, 0)$ in local humanoid space.
+  - **Linear Blend Skinning Rigging Engine (`RiggingEngine`)**: Computes vertex skinning weights using SMPL native LBS weights ($6890 \times 24$ matrix) or proximity heat weights, normalized to the top-4 influences per vertex summing to $1.0$ ($L_1 = 1.0$), complying with GPU shader constraints.
+  - **Procedural Animation Engine (`ProceduralAnimationEngine`)**: Synthesizes deterministic procedural animation clips with quaternion rotations: `idle_breathing` (3.0s), `torso_twist` (4.0s), `arm_wave` (2.5s), and `gentle_walk` (2.0s).
+  - **Honest Provenance & Disclaimers**: All procedural clips and UI badges carry explicit `provenance: "procedural"` metadata, communicating clearly that motion is procedurally synthesized and not historical motion recovered from the photograph.
+  - **Three.js Skeleton Overlay (`SkeletonOverlay`)**: Renders 24 joint spheres (root pelvis highlighted in amber `#f59e0b`, limbs in emerald `#10b981`) and 23 bone line segments with X-ray depth testing.
+  - **Interactive Playback Controls**: Independent per-person playback controls including Play/Pause, Reset Pose, playback speed chips (0.5x, 1.0x, 1.5x), and clip dropdown selector.
 - **Multi-Person 3D Scene Assembly Engine (Phase 06)**:
   - **Deterministic Scene Graph Assembly**: Transforms individually reconstructed human meshes into a unified, coherent 3D spatial scene graph with hierarchical parent-child relationships and typed nodes.
   - **Model Space vs. Scene Space Separation**: Preserves canonical SMPL geometry (origin at pelvis) and evaluates explicit scene transforms:
@@ -50,7 +60,7 @@ Current Status: **Phase 06: Multi-Person Scene Assembly (Completed)**
 - **Monocular Depth Estimation**: Local Depth Anything V2 Small neural network producing dense relative depth fields $[0.0, 1.0]$ with robust 2nd/98th percentile normalization.
 - **Interactive 3D Spatial Photography**: High-resolution $128 \times 128$ vertex displacement mesh with bounded parallax orbit controls (azimuth $\pm 18^\circ$, polar $75^\circ \text{--} 105^\circ$, damping $0.06$).
 - **Local Asset Storage**: Lossless float32 machine-readable `.npy` depth maps, grayscale visualization PNGs, 8-bit binary instance masks, binary GLTF meshes (`.glb`), sanitized photos, and scene JSON definitions stored safely in `data/storage/`.
-- **Automated Verification**: **116 automated tests passing** across 5 test suites (backend pytest, frontend vitest, schema vitest, and Playwright E2E).
+- **Automated Verification**: **138 automated tests passing** across 5 test suites (backend pytest, frontend vitest, schema vitest, and Playwright E2E).
 
 ---
 

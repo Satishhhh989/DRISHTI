@@ -53,6 +53,15 @@ MODEL_CATALOG: Dict[str, Dict[str, Any]] = {
         "license": "SPIN: MIT; SMPL: Non-Commercial Research License (MPI)",
         "task": "human-mesh-recovery",
     },
+    "yolov8n-pose": {
+        "filename": "yolov8n-pose.pt",
+        "category": "pose_estimation",
+        "description": "YOLOv8 Nano Human Pose Estimation (2D Keypoint Detection)",
+        "download_url": "https://github.com/ultralytics/assets/releases/download/v8.4.0/yolov8n-pose.pt",
+        "size_mb": 6.5,
+        "license": "AGPL-3.0",
+        "task": "pose",
+    },
 }
 
 

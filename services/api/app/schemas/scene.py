@@ -45,6 +45,85 @@ class AnimationState(BaseModel):
     loop: bool = True
 
 
+class CoordinateConvention(BaseModel):
+    up: str = "+Y"
+    forward: str = "+Z"
+    right: str = "+X"
+    units: str = "meters"
+
+
+class SkeletonJoint(BaseModel):
+    id: str
+    name: str
+    index: int
+    parent_id: Optional[str] = None
+    position: List[float] = Field(default_factory=lambda: [0.0, 0.0, 0.0], description="Local position [x, y, z] in meters")
+    rotation: List[float] = Field(default_factory=lambda: [0.0, 0.0, 0.0, 1.0], description="Local rotation quaternion [qx, qy, qz, qw]")
+    confidence: Optional[float] = Field(default=None, ge=0.0, le=1.0)
+    is_observed: bool = True
+
+
+class BoneDefinition(BaseModel):
+    id: str
+    head_joint_id: str
+    tail_joint_id: str
+    length: float = 0.0
+
+
+class SkeletonData(BaseModel):
+    id: str
+    entity_id: str
+    schema_version: str = "1.0.0"
+    root_joint_id: str = "pelvis"
+    joints: List[SkeletonJoint] = Field(default_factory=list)
+    bones: List[BoneDefinition] = Field(default_factory=list)
+    coordinate_convention: CoordinateConvention = Field(default_factory=CoordinateConvention)
+    source: Literal["smpl_regressed", "yolo_pose_projected", "mock_anatomical"] = "smpl_regressed"
+    is_aligned: bool = True
+    alignment_transform: Optional[Transform] = None
+    validation_status: Literal["valid", "incomplete", "invalid"] = "valid"
+    validation_errors: List[str] = Field(default_factory=list)
+    created_at: str = Field(
+        default_factory=lambda: datetime.now(timezone.utc).isoformat()
+    )
+
+
+class RigData(BaseModel):
+    id: str
+    entity_id: str
+    skeleton_id: str
+    mesh_asset_id: Optional[str] = None
+    status: Literal["rigged", "unrigged", "failed"] = "unrigged"
+    skinning_method: Literal["smpl_lbs_native", "proximity_heat_weights", "none"] = "none"
+    bone_count: int = 24
+    max_influences_per_vertex: int = 4
+    weights_normalized: bool = True
+    error_message: Optional[str] = None
+    rigged_at: Optional[str] = None
+
+
+class JointTransformTrack(BaseModel):
+    joint_id: str
+    timestamps: List[float] = Field(default_factory=list, description="Keyframe time offsets in seconds")
+    rotations: List[List[float]] = Field(default_factory=list, description="List of quaternion [qx, qy, qz, qw] per keyframe")
+    positions: Optional[List[List[float]]] = None
+
+
+class AnimationClipData(BaseModel):
+    id: str
+    name: str
+    target_entity_id: str
+    target_skeleton_id: str
+    duration_seconds: float
+    is_looping: bool = True
+    fps: float = 30.0
+    provenance: Literal["procedural"] = "procedural"
+    tracks: List[JointTransformTrack] = Field(default_factory=list)
+    created_at: str = Field(
+        default_factory=lambda: datetime.now(timezone.utc).isoformat()
+    )
+
+
 class DetectionInfo(BaseModel):
     confidence: float = Field(..., ge=0.0, le=1.0)
     bounding_box: BoundingBox2D
@@ -108,13 +187,6 @@ class ModelProvenance(BaseModel):
     checkpoint: Optional[str] = None
 
 
-class CoordinateConvention(BaseModel):
-    up: str = "+Y"
-    forward: str = "+Z"
-    right: str = "+X"
-    units: str = "meters"
-
-
 class HumanReconstructionData(BaseModel):
     status: Literal["none", "pending", "processing", "ready", "failed"] = "none"
     mesh_asset_id: Optional[str] = None
@@ -151,6 +223,10 @@ class SceneEntity(BaseModel):
     reconstruction: Optional[HumanReconstructionData] = None
     placement: Optional[PlacementProvenance] = None
     scene_node_id: Optional[str] = None
+    skeleton: Optional[SkeletonData] = None
+    rig: Optional[RigData] = None
+    animation_clips: List[AnimationClipData] = Field(default_factory=list)
+    show_skeleton: bool = False
 
 
 class DepthNormalizationMetadata(BaseModel):

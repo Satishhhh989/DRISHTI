@@ -84,6 +84,74 @@ export interface AnimationState {
   loop: boolean;
 }
 
+export interface SkeletonJoint {
+  id: string;
+  name: string;
+  index: number;
+  parentId?: string | null;
+  position: [number, number, number]; // Local position in meters
+  rotation: [number, number, number, number]; // Quaternion [qx, qy, qz, qw]
+  confidence?: number;
+  isObserved: boolean;
+}
+
+export interface BoneDefinition {
+  id: string;
+  headJointId: string;
+  tailJointId: string;
+  length: number;
+}
+
+export interface SkeletonData {
+  id: string;
+  entityId: string;
+  schemaVersion: "1.0.0";
+  rootJointId: string;
+  joints: SkeletonJoint[];
+  bones: BoneDefinition[];
+  coordinateConvention: CoordinateConvention;
+  source: "smpl_regressed" | "yolo_pose_projected" | "mock_anatomical";
+  isAligned: boolean;
+  alignmentTransform?: Transform;
+  validationStatus: "valid" | "incomplete" | "invalid";
+  validationErrors: string[];
+  createdAt: string;
+}
+
+export interface RigData {
+  id: string;
+  entityId: string;
+  skeletonId: string;
+  meshAssetId?: string | null;
+  status: "rigged" | "unrigged" | "failed";
+  skinningMethod: "smpl_lbs_native" | "proximity_heat_weights" | "none";
+  boneCount: number;
+  maxInfluencesPerVertex: number;
+  weightsNormalized: boolean;
+  errorMessage?: string | null;
+  riggedAt?: string;
+}
+
+export interface JointTransformTrack {
+  jointId: string;
+  timestamps: number[];
+  rotations: [number, number, number, number][]; // Quaternion per keyframe
+  positions?: [number, number, number][];
+}
+
+export interface AnimationClipData {
+  id: string;
+  name: string;
+  targetEntityId: string;
+  targetSkeletonId: string;
+  durationSeconds: number;
+  isLooping: boolean;
+  fps: number;
+  provenance: "procedural";
+  tracks: JointTransformTrack[];
+  createdAt: string;
+}
+
 export interface DetectionInfo {
   confidence: number;
   boundingBox: BoundingBox2D;
@@ -208,6 +276,10 @@ export interface SceneEntity {
   reconstruction?: HumanReconstructionData;
   placement?: PlacementProvenance;
   sceneNodeId?: string;
+  skeleton?: SkeletonData;
+  rig?: RigData;
+  animationClips?: AnimationClipData[];
+  showSkeleton?: boolean;
 }
 
 export type RepresentationStatus = 

@@ -36,7 +36,9 @@ export type PipelineStageIdentifier =
   | "completed"
   | "mesh_reconstruction"
   | "human_reconstruction"
+  | "pose_estimation"
   | "skeleton_fitting"
+  | "mesh_rigging"
   | "animation_preparation"
   | "scene_assembly";
 
@@ -46,6 +48,18 @@ export type JobStatus =
   | "completed"
   | "failed"
   | "cancelled";
+
+export type AssetCategoryType =
+  | "original_photo"
+  | "segmentation_mask"
+  | "depth_map"
+  | "depth_visualization"
+  | "mesh"
+  | "texture"
+  | "skeleton"
+  | "rig"
+  | "animation"
+  | "export";
 
 export interface AssetReference {
   assetId: string;

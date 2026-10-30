@@ -40,9 +40,9 @@ The backend processing pipeline emits typed, strictly-sequenced events as operat
 
 ---
 
-## 3. Phase 06 Pipeline Stages
+## 3. Phase 07 Pipeline Stages
 
-The Phase 06 pipeline executes 14 sequential stages:
+The Phase 07 pipeline executes 18 sequential stages:
 
 | Stage Identifier | Progress Weight | Description |
 |---|---|---|
@@ -56,8 +56,12 @@ The Phase 06 pipeline executes 14 sequential stages:
 | `depth_normalization` | 70% | Robust 2nd/98th percentile clamping and inversion to canonical proximity $[0, 1]$. |
 | `depth_association` | 75% | Computes per-entity median/min/max proximity stats using segmentation masks. |
 | `spatial_photo_preparation` | 80% | Prepares 3D spatial mesh displacement properties and parallax camera boundaries. |
-| `human_reconstruction` | 92%–96% | Reconstructs 3D volumetric human meshes via local SPIN + SMPL LBS forward layer. |
-| `scene_assembly` | 96%–98% | Assembles unified 3D scene graph, computes spatial transforms, bounds, and occlusion checks. |
+| `human_reconstruction` | 90% | Reconstructs 3D volumetric human meshes via local SPIN + SMPL LBS forward layer. |
+| `pose_estimation` | 92% | Estimates 2D body keypoints per detected person via local YOLOv8-pose. |
+| `skeleton_fitting` | 94% | Fits canonical 24-joint 3D kinematic skeleton via SMPL regression / landmarks. |
+| `mesh_rigging` | 96% | Computes normalized LBS skinning weights ($\le 4$ influences per vertex, $L_1 = 1.0$). |
+| `animation_preparation` | 97% | Synthesizes deterministic procedural animation clips (breathing, twist, wave, walk). |
+| `scene_assembly` | 98% | Assembles unified 3D scene graph, computes spatial transforms, bounds, and occlusion checks. |
 | `scene_update` | 99% | Atomically updates authoritative scene entities, graph, reports, and disk storage. |
 | `completed` | 100% | Emits final `job_completed` event and notifies clients. |
 

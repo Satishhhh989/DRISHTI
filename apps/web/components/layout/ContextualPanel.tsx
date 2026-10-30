@@ -24,6 +24,9 @@ export const ContextualPanel: React.FC = () => {
     (state) => state.reconcileAuthoritativeScene
   );
   const toggleEntityVisibility = useSceneStore((state) => state.toggleEntityVisibility);
+  const setEntityAnimation = useSceneStore((state) => state.setEntityAnimation);
+  const toggleEntitySkeleton = useSceneStore((state) => state.toggleEntitySkeleton);
+  const resetEntityPose = useSceneStore((state) => state.resetEntityPose);
 
   const isInspectorOpen = useUIStore((state) => state.isInspectorOpen);
   const selectedEntityId = useUIStore((state) => state.selectedEntityId);
@@ -87,6 +90,18 @@ export const ContextualPanel: React.FC = () => {
 
   const readyMeshesCount = entities.filter(
     (e) => e.reconstruction?.status === "ready"
+  ).length;
+
+  const readySkeletonsCount = entities.filter(
+    (e) => e.skeleton?.validationStatus === "valid"
+  ).length;
+
+  const readyRigsCount = entities.filter(
+    (e) => e.rig?.status === "rigged"
+  ).length;
+
+  const readyAnimationsCount = entities.filter(
+    (e) => (e.animationClips?.length ?? 0) > 0
   ).length;
 
   return (
@@ -214,6 +229,78 @@ export const ContextualPanel: React.FC = () => {
               {entities.length > 0
                 ? `${readyMeshesCount} of ${entities.length} meshes`
                 : stages.human_reconstruction?.status || "Pending"}
+            </span>
+          </div>
+
+          {/* Stage: 2D Pose Estimation (Phase 07) */}
+          <div className={styles.stageRow} data-testid="stage-row-pose">
+            <span className={styles.stageName}>Pose Estimation</span>
+            <span
+              className={`${styles.stageStatus} ${
+                styles[
+                  stages.pose_estimation?.status ||
+                  (readySkeletonsCount > 0 ? "completed" : isAnalyzing ? "running" : "pending")
+                ]
+              }`}
+            >
+              {stages.pose_estimation?.status === "completed"
+                ? "Keypoints Detected"
+                : stages.pose_estimation?.status === "running"
+                ? "Running..."
+                : readySkeletonsCount > 0
+                ? "Completed"
+                : stages.pose_estimation?.status || "Pending"}
+            </span>
+          </div>
+
+          {/* Stage: 3D Skeleton Fitting (Phase 07) */}
+          <div className={styles.stageRow} data-testid="stage-row-skeleton">
+            <span className={styles.stageName}>Skeleton Fitting</span>
+            <span
+              className={`${styles.stageStatus} ${
+                styles[
+                  stages.skeleton_fitting?.status ||
+                  (readySkeletonsCount > 0 ? "completed" : isAnalyzing ? "running" : "pending")
+                ]
+              }`}
+            >
+              {entities.length > 0
+                ? `${readySkeletonsCount} of ${entities.length} skeletons`
+                : stages.skeleton_fitting?.status || "Pending"}
+            </span>
+          </div>
+
+          {/* Stage: Mesh Rigging (Phase 07) */}
+          <div className={styles.stageRow} data-testid="stage-row-rigging">
+            <span className={styles.stageName}>Mesh Rigging</span>
+            <span
+              className={`${styles.stageStatus} ${
+                styles[
+                  stages.mesh_rigging?.status ||
+                  (readyRigsCount > 0 ? "completed" : isAnalyzing ? "running" : "pending")
+                ]
+              }`}
+            >
+              {entities.length > 0
+                ? `${readyRigsCount} of ${entities.length} rigged`
+                : stages.mesh_rigging?.status || "Pending"}
+            </span>
+          </div>
+
+          {/* Stage: Procedural Motion Preparation (Phase 07) */}
+          <div className={styles.stageRow} data-testid="stage-row-animation">
+            <span className={styles.stageName}>Procedural Motion</span>
+            <span
+              className={`${styles.stageStatus} ${
+                styles[
+                  stages.animation_preparation?.status ||
+                  (readyAnimationsCount > 0 ? "completed" : isAnalyzing ? "running" : "pending")
+                ]
+              }`}
+            >
+              {entities.length > 0
+                ? `${readyAnimationsCount} of ${entities.length} animated`
+                : stages.animation_preparation?.status || "Pending"}
             </span>
           </div>
 
@@ -663,6 +750,212 @@ export const ContextualPanel: React.FC = () => {
               >
                 Focus Camera on Person
               </button>
+            </div>
+
+            {/* 3D Skeleton (Phase 07) */}
+            <div style={{ marginTop: "10px", paddingTop: "8px", borderTop: "1px solid #27272e" }} data-testid="entity-skeleton-section">
+              <div className={styles.sectionHeader} style={{ marginBottom: "6px" }}>Kinematic Skeleton</div>
+              {selectedEntity.skeleton ? (
+                <>
+                  <div className={styles.propRow}>
+                    <span className={styles.propLabel}>Status</span>
+                    <span
+                      className={`${styles.statusPill} ${
+                        selectedEntity.skeleton.validationStatus === "valid" ? styles.ready : styles.failed
+                      }`}
+                      data-testid="skeleton-status"
+                    >
+                      {selectedEntity.skeleton.validationStatus === "valid" ? "Ready" : "Invalid"}
+                    </span>
+                  </div>
+                  <div className={styles.propRow}>
+                    <span className={styles.propLabel}>Topology</span>
+                    <span className={styles.propValue} data-testid="skeleton-joint-count">
+                      {selectedEntity.skeleton.joints.length} Canonical Joints (23 Bones)
+                    </span>
+                  </div>
+                  <div className={styles.propRow}>
+                    <span className={styles.propLabel}>Root Joint</span>
+                    <span className={styles.propValue} data-testid="skeleton-root-joint">
+                      {selectedEntity.skeleton.rootJointId}
+                    </span>
+                  </div>
+                  <div className={styles.propRow}>
+                    <span className={styles.propLabel}>Source</span>
+                    <span className={styles.propValue} style={{ fontSize: "10px" }} data-testid="skeleton-source">
+                      {selectedEntity.skeleton.source === "smpl_regressed"
+                        ? "SMPL Regressed (3D)"
+                        : selectedEntity.skeleton.source === "yolo_pose_projected"
+                        ? "YOLOv8 2D Pose"
+                        : "Anatomical Landmarks"}
+                    </span>
+                  </div>
+                  <button
+                    type="button"
+                    className={styles.actionButton}
+                    onClick={() => toggleEntitySkeleton(selectedEntity.id)}
+                    data-testid="toggle-skeleton-btn"
+                    style={{ marginTop: "6px", padding: "5px 8px", fontSize: "11px" }}
+                  >
+                    {selectedEntity.showSkeleton ? "Hide Skeleton Overlay" : "Show Skeleton Overlay"}
+                  </button>
+                </>
+              ) : (
+                <div className={styles.emptyNotice} style={{ padding: "4px 0", fontSize: "11px" }}>
+                  Skeleton not fitted yet.
+                </div>
+              )}
+            </div>
+
+            {/* Mesh Rigging (Phase 07) */}
+            <div style={{ marginTop: "10px", paddingTop: "8px", borderTop: "1px solid #27272e" }} data-testid="entity-rigging-section">
+              <div className={styles.sectionHeader} style={{ marginBottom: "6px" }}>Mesh Rigging</div>
+              {selectedEntity.rig ? (
+                <>
+                  <div className={styles.propRow}>
+                    <span className={styles.propLabel}>Rig Status</span>
+                    <span
+                      className={`${styles.statusPill} ${
+                        selectedEntity.rig.status === "rigged"
+                          ? styles.ready
+                          : selectedEntity.rig.status === "failed"
+                          ? styles.failed
+                          : ""
+                      }`}
+                      style={{ textTransform: "capitalize" }}
+                      data-testid="rig-status"
+                    >
+                      {selectedEntity.rig.status}
+                    </span>
+                  </div>
+                  <div className={styles.propRow}>
+                    <span className={styles.propLabel}>Skinning Method</span>
+                    <span className={styles.propValue} style={{ fontSize: "10px" }} data-testid="rig-method">
+                      {selectedEntity.rig.skinningMethod === "smpl_lbs_native"
+                        ? "SMPL Native LBS (24 bones)"
+                        : selectedEntity.rig.skinningMethod === "proximity_heat_weights"
+                        ? "Proximity Heat Weights"
+                        : "None"}
+                    </span>
+                  </div>
+                  <div className={styles.propRow}>
+                    <span className={styles.propLabel}>Bone Influences</span>
+                    <span className={styles.propValue} style={{ fontSize: "10px" }}>
+                      Max 4 influences / vertex
+                    </span>
+                  </div>
+                  <div className={styles.propRow}>
+                    <span className={styles.propLabel}>Normalized</span>
+                    <span className={styles.propValue} style={{ color: "#22c55e" }}>
+                      {selectedEntity.rig.weightsNormalized ? "Yes (L1 = 1.0)" : "No"}
+                    </span>
+                  </div>
+                </>
+              ) : (
+                <div className={styles.emptyNotice} style={{ padding: "4px 0", fontSize: "11px" }}>
+                  Mesh is currently unrigged.
+                </div>
+              )}
+            </div>
+
+            {/* Motion & Procedural Animation (Phase 07) */}
+            <div style={{ marginTop: "10px", paddingTop: "8px", borderTop: "1px solid #27272e" }} data-testid="entity-motion-section">
+              <div className={styles.sectionHeader} style={{ marginBottom: "6px" }}>Motion & Animation</div>
+              {selectedEntity.rig?.status === "rigged" ? (
+                <>
+                  <label style={{ fontSize: "10px", color: "#a1a1aa" }}>Animation Clip</label>
+                  <select
+                    className={styles.clipSelect}
+                    value={selectedEntity.animationState?.currentClip || "idle_breathing"}
+                    onChange={(e) => {
+                      setEntityAnimation(
+                        selectedEntity.id,
+                        e.target.value,
+                        selectedEntity.animationState?.isPlaying ?? false,
+                        selectedEntity.animationState?.playbackSpeed ?? 1.0,
+                        selectedEntity.animationState?.loop ?? true
+                      );
+                    }}
+                    data-testid="clip-select"
+                  >
+                    <option value="idle_breathing">Idle Breathing (3.0s)</option>
+                    <option value="torso_twist">Torso Twist (4.0s)</option>
+                    <option value="arm_wave">Arm Wave (2.5s)</option>
+                    <option value="gentle_walk">Gentle Walk (2.0s)</option>
+                  </select>
+
+                  <div className={styles.animControls}>
+                    <button
+                      type="button"
+                      className={`${styles.animButton} ${
+                        selectedEntity.animationState?.isPlaying ? styles.playing : ""
+                      }`}
+                      onClick={() => {
+                        const playing = !selectedEntity.animationState?.isPlaying;
+                        setEntityAnimation(
+                          selectedEntity.id,
+                          selectedEntity.animationState?.currentClip || "idle_breathing",
+                          playing
+                        );
+                      }}
+                      data-testid="anim-play-pause-btn"
+                    >
+                      {selectedEntity.animationState?.isPlaying ? "Pause" : "Play"}
+                    </button>
+                    <button
+                      type="button"
+                      className={styles.animButton}
+                      onClick={() => resetEntityPose(selectedEntity.id)}
+                      data-testid="anim-reset-btn"
+                    >
+                      Reset Pose
+                    </button>
+                  </div>
+
+                  <div className={styles.propRow} style={{ marginTop: "6px" }}>
+                    <span className={styles.propLabel}>Playback Speed</span>
+                    <div style={{ display: "flex", gap: "4px" }}>
+                      {[0.5, 1.0, 1.5].map((speed) => (
+                        <button
+                          key={speed}
+                          type="button"
+                          className={styles.tagBadge}
+                          style={{
+                            cursor: "pointer",
+                            background:
+                              (selectedEntity.animationState?.playbackSpeed ?? 1.0) === speed
+                                ? "#3b82f6"
+                                : "#27272a",
+                            color:
+                              (selectedEntity.animationState?.playbackSpeed ?? 1.0) === speed
+                                ? "#ffffff"
+                                : "#a1a1aa",
+                          }}
+                          onClick={() => {
+                            setEntityAnimation(
+                              selectedEntity.id,
+                              selectedEntity.animationState?.currentClip || "idle_breathing",
+                              selectedEntity.animationState?.isPlaying ?? false,
+                              speed
+                            );
+                          }}
+                          data-testid={`speed-${speed}x`}
+                        >
+                          {speed}x
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div className={styles.disclaimerBadge} data-testid="anim-disclaimer">
+                    Procedural Test Animation (Not recovered motion from photo)
+                  </div>
+                </>
+              ) : (
+                <div className={styles.emptyNotice} style={{ padding: "4px 0", fontSize: "11px" }}>
+                  Animation unavailable — character has not been rigged.
+                </div>
+              )}
             </div>
           </div>
         ) : (

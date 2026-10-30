@@ -21,7 +21,7 @@ export const TopBar: React.FC = () => {
         <div className={styles.brand}>
           <span className={styles.title}>DRISHTI</span>
           <span className={styles.brandSubtitle}>PHOTO → 3D ENGINE</span>
-          <span className={styles.phaseTag}>Phase 06</span>
+          <span className={styles.phaseTag}>Phase 07</span>
         </div>
         <div className={styles.runtimeBadge}>
           <span

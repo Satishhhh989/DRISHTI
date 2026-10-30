@@ -1,11 +1,11 @@
 import { test, expect } from "@playwright/test";
 
-test.describe("Phase 01 & 02: Workspace & Viewport E2E Verification", () => {
+test.describe("Phase 01 - 07: Workspace & Viewport E2E Verification", () => {
   test("1. The application opens and renders workspace", async ({ page }) => {
     await page.goto("/");
     await expect(page.locator('[data-testid="workspace-root"]')).toBeVisible();
     await expect(page.getByText("PHOTO → 3D ENGINE")).toBeVisible();
-    await expect(page.getByText(/Phase 0[1-6]/)).toBeVisible();
+    await expect(page.getByText(/Phase 0[1-7]/)).toBeVisible();
   });
 
   test("2. The upload control is visible in top bar and empty viewport", async ({ page }) => {
@@ -38,7 +38,6 @@ test.describe("Phase 01 & 02: Workspace & Viewport E2E Verification", () => {
     const wireframeNotice = page.locator('[data-testid="wireframe-placeholder"]');
     await expect(wireframeNotice).toBeVisible();
     await expect(wireframeNotice).toContainText("Polygon wireframe geometry not generated yet");
-    await expect(wireframeNotice).toContainText("Phase 06");
 
     // Click 3D Solid mode
     const solidTab = page.locator('[data-testid="mode-solid3d"]');
@@ -115,6 +114,10 @@ test.describe("Phase 01 & 02: Workspace & Viewport E2E Verification", () => {
     await expect(page.locator('[data-testid="stage-row-depth"]')).toBeVisible();
     await expect(page.locator('[data-testid="stage-row-spatial"]')).toBeVisible();
     await expect(page.locator('[data-testid="stage-row-reconstruction"]')).toBeVisible();
+    await expect(page.locator('[data-testid="stage-row-pose"]')).toBeVisible();
+    await expect(page.locator('[data-testid="stage-row-skeleton"]')).toBeVisible();
+    await expect(page.locator('[data-testid="stage-row-rigging"]')).toBeVisible();
+    await expect(page.locator('[data-testid="stage-row-animation"]')).toBeVisible();
     await expect(page.locator('[data-testid="stage-row-assembly"]')).toBeVisible();
   });
 
@@ -143,5 +146,18 @@ test.describe("Phase 01 & 02: Workspace & Viewport E2E Verification", () => {
     // Verify Scene Assembly row exists in pipeline inspector
     await expect(page.locator('[data-testid="stage-row-assembly"]')).toBeVisible();
     await expect(page.getByText("Scene Assembly")).toBeVisible();
+  });
+
+  test("11. Phase 07 DRISHTI Motion stages and animation controls are present", async ({ page }) => {
+    await page.goto("/");
+
+    // Verify Motion Pipeline Inspector stage rows
+    await expect(page.locator('[data-testid="stage-row-pose"]')).toBeVisible();
+    await expect(page.locator('[data-testid="stage-row-skeleton"]')).toBeVisible();
+    await expect(page.locator('[data-testid="stage-row-rigging"]')).toBeVisible();
+    await expect(page.locator('[data-testid="stage-row-animation"]')).toBeVisible();
+
+    // Verify Entity Inspector container is mounted
+    await expect(page.locator('[data-testid="entity-details-section"]')).toBeVisible();
   });
 });

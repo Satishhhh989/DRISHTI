@@ -188,8 +188,30 @@ The UI provides an interactive workspace focused on the 3D viewport:
 - **Scene Graph Construction (`SceneGraph`)**:
   - Builds root, camera node, ambient & directional light nodes, reference plane node, ground grid node, and per-person nodes.
 
-### 3.11 Multi-Stage Pipeline Coordinator (`coordinator.py`)
-Orchestrates 14 sequential stages with monotonic sequence numbers:
+### 3.11 DRISHTI Motion Subsystem (`motion.py`)
+
+Phase 07 introduces the **DRISHTI Motion** subsystem, transitioning static reconstructed meshes into fully articulated, animatable 3D human characters:
+
+- **Canonical 24-Joint Kinematic Hierarchy**:
+  - Aligned with the SMPL standard topology: `pelvis` (root, index 0), `left_hip`, `right_hip`, `spine1`, `left_knee`, `right_knee`, `spine2`, `left_ankle`, `right_ankle`, `spine3`, `left_foot`, `right_foot`, `neck`, `left_collar`, `right_collar`, `head`, `left_shoulder`, `right_shoulder`, `left_elbow`, `right_elbow`, `left_wrist`, `right_wrist`, `left_hand`, `right_hand`.
+  - Rigorous structural validation (`validate_skeleton_hierarchy`): cycle detection, duplicate index detection, missing parent checks, and non-finite coordinate assertions.
+- **2D Pose Estimation**:
+  - `YoloPoseEstimator` using local `yolov8n-pose.pt` (6.5MB) with automatic multi-person matching via bounding box IoU.
+  - `MockPoseEstimator` fallback ensuring testability without GPU acceleration.
+  - Preserves per-keypoint detection confidence mapped from COCO-17 to canonical joints.
+- **3D Skeleton Fitting (`SkeletonFitter`)**:
+  - Reconstructs 3D joint centers via SMPL joint regression matrix ($J = J_{regressor} \cdot V_{6890}$) or anatomical bounding box landmarks.
+  - Rest pose centered with pelvis at origin $(0, 0, 0)$ in local human mesh space (meters, Y-up).
+- **Linear Blend Skinning Rigging Engine (`RiggingEngine`)**:
+  - SMPL native skinning weights ($6890 \times 24$) from `SMPL_N_model.npz` or inverse distance proximity heat weights for arbitrary geometry.
+  - Pruned to the top-4 bone influences per vertex and normalized so weights sum exactly to $1.0$ ($\sum w_i = 1.0$), complying with GPU vertex shader limits (`vec4` weights/indices).
+- **Procedural Animation Engine (`ProceduralAnimationEngine`)**:
+  - Deterministic procedural clips with quaternion rotations: `idle_breathing` (3.0s), `torso_twist` (4.0s), `arm_wave` (2.5s), `gentle_walk` (2.0s).
+  - Explicitly labeled with `provenance: "procedural"`, communicating honestly that motion is procedurally synthesized and not historical motion recovered from the photograph.
+  - Independent per-person animation state (`isPlaying`, `currentClip`, `playbackSpeed`, `loop`).
+
+### 3.12 Multi-Stage Pipeline Coordinator (`coordinator.py`)
+Orchestrates 18 sequential stages with monotonic sequence numbers:
 1. `image_validation`
 2. `image_preparation`
 3. `person_detection`
@@ -201,16 +223,22 @@ Orchestrates 14 sequential stages with monotonic sequence numbers:
 9. `depth_association`
 10. `spatial_photo_preparation`
 11. `human_reconstruction`
-12. `scene_assembly`
-13. `scene_update`
-14. `completed`
+12. `pose_estimation`
+13. `skeleton_fitting`
+14. `mesh_rigging`
+15. `animation_preparation`
+16. `scene_assembly`
+17. `scene_update`
+18. `completed`
 
-### 3.12 Asset Manager & Storage Layout
+### 3.13 Asset Manager & Storage Layout
 - Storage root: `data/storage/`
   - `photos/`: Source photographs validated and sanitized.
   - `masks/`: 8-bit binary PNG instance masks named `{uuid}_{entity_id}_mask.png`.
   - `depth/`: Machine-readable float32 `.npy` depth maps and 8-bit grayscale `.png` visualizations.
   - `meshes/`: Binary GLTF human meshes named `{scene_id}_{entity_id}.glb`.
   - `scenes/`: Persisted JSON scene graphs named `{scene_id}.json`.
-  - `skeletons/`: Reserved for Phase 07 kinematic skeletons.
+  - `skeletons/`: JSON kinematic skeleton definitions named `{scene_id}_{entity_id}_skeleton.json`.
+  - `rigs/`: Rig and skinning metadata JSON files.
+  - `animations/`: Procedural animation clip JSON files.
 - Path traversal protection (`StorageSecurityError`) on all file operations.

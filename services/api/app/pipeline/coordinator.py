@@ -28,7 +28,7 @@ from app.assets.manager import asset_manager
 from app.core.logging import logger
 from app.events.emitter import event_emitter
 from app.jobs.tracker import job_tracker
-from app.pipeline.assembly import scene_assembly_engine
+from app.pipeline.assembly import compute_2d_iou, scene_assembly_engine
 from app.pipeline.depth import (
     DepthAnythingV2Estimator,
     compute_entity_depth_stats,
@@ -48,6 +48,15 @@ from app.pipeline.mock import (
     MockPersonSegmentor,
 )
 from app.pipeline.models import model_manager
+from app.pipeline.motion import (
+    IPoseEstimator,
+    MockPoseEstimator,
+    PoseEstimationResult,
+    YoloPoseEstimator,
+    procedural_animation_engine,
+    rigging_engine,
+    skeleton_fitter,
+)
 from app.pipeline.reconstructor import (
     HumanReconstructor,
     MockHumanReconstructor,
@@ -68,6 +77,7 @@ from app.schemas.scene import (
     MeshBounds,
     ModelProvenance,
     RepresentationAsset,
+    RigData,
     Scene,
     SceneDepthMetadata,
     SceneEntity,
@@ -672,6 +682,7 @@ class PipelineCoordinator:
                     reconstructor = self.get_reconstructor()
                     total_people = len(entities)
                     successful_meshes = 0
+                    reconstructed_vertices: Dict[str, np.ndarray] = {}
 
                     img_bgr = cv2.imread(str(photo_path))
                     if img_bgr is not None:
@@ -697,6 +708,7 @@ class PipelineCoordinator:
                                 mask_gray=mask_bytes,
                                 depth_stats=depth_info.model_dump() if depth_info else None,
                             )
+                            reconstructed_vertices[entity.id] = rec_result.vertices
 
                             # Save GLB asset
                             mesh_filename = f"{scene_id}_{entity.id}.glb"
@@ -832,7 +844,270 @@ class PipelineCoordinator:
                 return scene
 
             # -------------------------------------------------------------
-            # Stage 12: SCENE_ASSEMBLY
+            # Stage 12: POSE_ESTIMATION (Phase 07)
+            # -------------------------------------------------------------
+            job_tracker.update_job_status(job_id, status="running", current_stage="pose_estimation")
+            event_emitter.emit(
+                job_id=job_id,
+                scene_id=scene_id,
+                event_type="stage_started",
+                stage_identifier="pose_estimation",
+                status="running",
+                progress=0.92,
+                message=f"Estimating 2D human pose keypoints for {len(scene.entities)} entities...",
+            )
+
+            pose_results_by_entity: Dict[str, PoseEstimationResult] = {}
+            try:
+                pose_model_path = model_manager.get_model_path("yolov8n-pose")
+                if pose_model_path.exists() and not isinstance(self.detector, MockPersonDetector):
+                    pose_estimator: IPoseEstimator = YoloPoseEstimator(model_path=pose_model_path, device=device_manager.device)
+                else:
+                    pose_estimator = MockPoseEstimator()
+
+                img_for_pose = cv2.imread(str(photo_path)) if photo_path.exists() else None
+                if img_for_pose is None:
+                    img_for_pose = np.zeros((scene.source_image.height, scene.source_image.width, 3), dtype=np.uint8)
+
+                boxes = [e.detection.bounding_box for e in scene.entities if e.detection and e.detection.bounding_box]
+                all_poses = pose_estimator.estimate_poses(img_for_pose, boxes)
+
+                for entity in scene.entities:
+                    if not entity.detection or not entity.detection.bounding_box:
+                        continue
+                    best_iou = 0.0
+                    best_pose = None
+                    for p in all_poses:
+                        iou = compute_2d_iou(entity.detection.bounding_box, p.bounding_box)
+                        if iou > best_iou:
+                            best_iou = iou
+                            best_pose = p
+                    if best_pose and best_iou > 0.10:
+                        pose_results_by_entity[entity.id] = best_pose
+
+                event_emitter.emit(
+                    job_id=job_id,
+                    scene_id=scene_id,
+                    event_type="stage_completed",
+                    stage_identifier="pose_estimation",
+                    status="running",
+                    progress=0.93,
+                    message=f"Pose estimation complete ({len(pose_results_by_entity)} of {len(scene.entities)} people matched).",
+                )
+            except Exception as pose_err:
+                logger.warning(f"Pose estimation non-fatal error: {pose_err}")
+                event_emitter.emit(
+                    job_id=job_id,
+                    scene_id=scene_id,
+                    event_type="stage_failed",
+                    stage_identifier="pose_estimation",
+                    status="running",
+                    error=StructuredError(code="POSE_ESTIMATION_ERROR", message=str(pose_err)),
+                )
+
+            # Check cancellation
+            if job_tracker.is_cancelled(job_id):
+                scene.processing_status = "ready"
+                scene_manager.update_scene(scene)
+                return scene
+
+            # -------------------------------------------------------------
+            # Stage 13: SKELETON_FITTING (Phase 07)
+            # -------------------------------------------------------------
+            job_tracker.update_job_status(job_id, status="running", current_stage="skeleton_fitting")
+            event_emitter.emit(
+                job_id=job_id,
+                scene_id=scene_id,
+                event_type="stage_started",
+                stage_identifier="skeleton_fitting",
+                status="running",
+                progress=0.93,
+                message=f"Fitting 3D skeletons for {len(scene.entities)} entities...",
+            )
+
+            successful_skeletons = 0
+            for entity in scene.entities:
+                try:
+                    matched_pose = pose_results_by_entity.get(entity.id)
+                    verts = reconstructed_vertices.get(entity.id) if 'reconstructed_vertices' in locals() else None
+                    skeleton = skeleton_fitter.build_skeleton(entity, verts, matched_pose)
+                    entity.skeleton = skeleton
+                    entity.skeleton_ref = skeleton.id
+                    if skeleton.validation_status == "valid":
+                        successful_skeletons += 1
+                        event_emitter.emit(
+                            job_id=job_id,
+                            scene_id=scene_id,
+                            event_type="asset_ready",
+                            stage_identifier="skeleton_fitting",
+                            status="running",
+                            progress=0.93 + 0.01 * (successful_skeletons / max(1, len(scene.entities))),
+                            asset_reference=AssetReference(
+                                asset_id=skeleton.id,
+                                asset_type="skeleton",
+                                uri=f"/api/v1/scenes/{scene.id}/entities/{entity.id}/skeleton",
+                                mime_type="application/json",
+                            ),
+                            message=f"3D skeleton fitted for {entity.id} ({len(skeleton.joints)} joints).",
+                        )
+                except Exception as skel_err:
+                    logger.warning(f"Skeleton fitting error for entity {entity.id}: {skel_err}")
+
+            scene_manager.update_scene(scene)
+
+            event_emitter.emit(
+                job_id=job_id,
+                scene_id=scene_id,
+                event_type="stage_completed",
+                stage_identifier="skeleton_fitting",
+                status="running",
+                progress=0.94,
+                message=f"Skeleton fitting complete ({successful_skeletons} of {len(scene.entities)} skeletons valid).",
+            )
+
+            # Check cancellation
+            if job_tracker.is_cancelled(job_id):
+                scene.processing_status = "ready"
+                scene_manager.update_scene(scene)
+                return scene
+
+            # -------------------------------------------------------------
+            # Stage 14: MESH_RIGGING (Phase 07)
+            # -------------------------------------------------------------
+            job_tracker.update_job_status(job_id, status="running", current_stage="mesh_rigging")
+            event_emitter.emit(
+                job_id=job_id,
+                scene_id=scene_id,
+                event_type="stage_started",
+                stage_identifier="mesh_rigging",
+                status="running",
+                progress=0.94,
+                message="Binding reconstructed meshes with skeletal skinning weights...",
+            )
+
+            successful_rigs = 0
+            for entity in scene.entities:
+                try:
+                    if entity.skeleton and entity.reconstruction and entity.reconstruction.status == "ready":
+                        verts = reconstructed_vertices.get(entity.id) if 'reconstructed_vertices' in locals() else None
+                        rig_data = rigging_engine.rig_mesh(entity, entity.skeleton, verts)
+                        entity.rig = rig_data
+                        if rig_data.status == "rigged":
+                            successful_rigs += 1
+                            event_emitter.emit(
+                                job_id=job_id,
+                                scene_id=scene_id,
+                                event_type="asset_ready",
+                                stage_identifier="mesh_rigging",
+                                status="running",
+                                progress=0.94 + 0.01 * (successful_rigs / max(1, len(scene.entities))),
+                                asset_reference=AssetReference(
+                                    asset_id=rig_data.id,
+                                    asset_type="rig",
+                                    uri=f"/api/v1/scenes/{scene.id}/entities/{entity.id}/rig",
+                                    mime_type="application/json",
+                                ),
+                                message=f"Mesh rigging complete for {entity.id} ({rig_data.skinning_method}).",
+                            )
+                    else:
+                        entity.rig = RigData(
+                            id=f"rig-{entity.id}",
+                            entity_id=entity.id,
+                            skeleton_id=entity.skeleton.id if entity.skeleton else f"skel-{entity.id}",
+                            status="unrigged",
+                            error_message="Reconstructed mesh not available for rigging",
+                        )
+                except Exception as rig_err:
+                    logger.warning(f"Rigging error for entity {entity.id}: {rig_err}")
+                    entity.rig = RigData(
+                        id=f"rig-{entity.id}",
+                        entity_id=entity.id,
+                        skeleton_id=entity.skeleton.id if entity.skeleton else f"skel-{entity.id}",
+                        status="failed",
+                        error_message=str(rig_err),
+                    )
+
+            scene_manager.update_scene(scene)
+
+            event_emitter.emit(
+                job_id=job_id,
+                scene_id=scene_id,
+                event_type="stage_completed",
+                stage_identifier="mesh_rigging",
+                status="running",
+                progress=0.95,
+                message=f"Mesh rigging stage complete ({successful_rigs} of {len(scene.entities)} meshes rigged).",
+            )
+
+            # Check cancellation
+            if job_tracker.is_cancelled(job_id):
+                scene.processing_status = "ready"
+                scene_manager.update_scene(scene)
+                return scene
+
+            # -------------------------------------------------------------
+            # Stage 15: ANIMATION_PREPARATION (Phase 07)
+            # -------------------------------------------------------------
+            job_tracker.update_job_status(job_id, status="running", current_stage="animation_preparation")
+            event_emitter.emit(
+                job_id=job_id,
+                scene_id=scene_id,
+                event_type="stage_started",
+                stage_identifier="animation_preparation",
+                status="running",
+                progress=0.95,
+                message="Generating procedural humanoid animation clips...",
+            )
+
+            prepared_animations = 0
+            for entity in scene.entities:
+                try:
+                    if entity.rig and entity.rig.status == "rigged" and entity.skeleton:
+                        clips = procedural_animation_engine.generate_clips_for_entity(entity.id, entity.skeleton.id)
+                        entity.animation_clips = clips
+                        if not entity.animation_state.current_clip:
+                            entity.animation_state.current_clip = "idle_breathing"
+                        prepared_animations += 1
+                        event_emitter.emit(
+                            job_id=job_id,
+                            scene_id=scene_id,
+                            event_type="asset_ready",
+                            stage_identifier="animation_preparation",
+                            status="running",
+                            progress=0.95 + 0.01 * (prepared_animations / max(1, len(scene.entities))),
+                            asset_reference=AssetReference(
+                                asset_id=f"anim-{entity.id}",
+                                asset_type="animation",
+                                uri=f"/api/v1/scenes/{scene.id}/entities/{entity.id}/animation",
+                                mime_type="application/json",
+                            ),
+                            message=f"Procedural animation clips ready for {entity.id} ({len(clips)} clips).",
+                        )
+                    else:
+                        entity.animation_clips = []
+                except Exception as anim_err:
+                    logger.warning(f"Animation preparation error for entity {entity.id}: {anim_err}")
+
+            scene_manager.update_scene(scene)
+
+            event_emitter.emit(
+                job_id=job_id,
+                scene_id=scene_id,
+                event_type="stage_completed",
+                stage_identifier="animation_preparation",
+                status="running",
+                progress=0.96,
+                message=f"Animation preparation complete ({prepared_animations} of {len(scene.entities)} characters animated).",
+            )
+
+            # Check cancellation
+            if job_tracker.is_cancelled(job_id):
+                scene.processing_status = "ready"
+                scene_manager.update_scene(scene)
+                return scene
+
+            # -------------------------------------------------------------
+            # Stage 16: SCENE_ASSEMBLY
             # -------------------------------------------------------------
             job_tracker.update_job_status(job_id, status="running", current_stage="scene_assembly")
             event_emitter.emit(
