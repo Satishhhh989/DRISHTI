@@ -38,6 +38,31 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
   saveStatusMessage: null,
 
   initProjectFromScene: async (scene, name) => {
+    // If scene is local client-side only (temporary upload preview), create local project fallback directly
+    if (scene.id.startsWith("local-")) {
+      const fallbackProj: Project = {
+        id: `proj-local-${scene.id.substring(0, 8)}`,
+        name: name || scene.name,
+        schemaVersion: "1.0.0",
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        sceneId: scene.id,
+        sourceImage: scene.sourceImage,
+        settings: { activeRepresentation: "solid3d", showGrid: true, showReferencePlane: true },
+        assetManifest: [],
+        processingState: {
+          detection: scene.entities.length > 0,
+          segmentation: scene.entities.some((e) => e.segmentation?.status === "ready"),
+          depth: scene.depth?.status === "ready",
+          reconstruction: scene.entities.some((e) => e.reconstruction?.status === "ready"),
+          assembly: scene.assemblyReport?.status === "completed",
+          motion: scene.entities.some((e) => (e.animationClips?.length ?? 0) > 0),
+        },
+      };
+      set({ currentProject: fallbackProj, isDirty: false });
+      return fallbackProj;
+    }
+
     try {
       const proj = await apiClient.createProject(scene.id, name || scene.name);
       set({

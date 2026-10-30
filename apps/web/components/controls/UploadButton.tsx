@@ -102,6 +102,7 @@ export const UploadButton: React.FC<UploadButtonProps> = ({
         // Fall back gracefully to client-side session without failing the user
         const msg = err instanceof Error ? err.message : "API offline";
         console.warn("Backend storage not reached, operating in client-local mode:", msg);
+        setError(`Upload failed: ${msg}`);
         setStatusNotice("Operating in local offline mode.");
       }
     } catch (err: unknown) {

@@ -11,6 +11,7 @@ import { Scene, VisualizationMode, RepresentationMode, Transform, createInitialS
 import { ProcessingEvent } from "@photo-to-3d/shared-types";
 import { apiClient } from "@/lib/api-client";
 import { assetCache } from "@/lib/asset-cache";
+import { normalizeScene } from "@/lib/scene-normalizer";
 import {
   reduceProcessingEvent,
   StageProgressInfo,
@@ -85,49 +86,51 @@ export const useSceneStore = create<SceneState>((set, get) => ({
   partialFailures: [],
 
   setScene: (scene) => {
+    const norm = normalizeScene(scene);
     let depthVisUrl: string | null = null;
     const uri =
-      scene.depth?.visualizationUri ||
-      (scene.depth as unknown as Record<string, string>)?.visualization_uri;
+      norm.depth?.visualizationUri ||
+      (norm.depth as unknown as Record<string, string>)?.visualization_uri;
     if (uri) {
       depthVisUrl = uri.startsWith("http") ? uri : `${API_BASE}${uri}`;
     }
 
     set({
-      currentScene: scene,
+      currentScene: norm,
       photoDimensions: {
-        width: scene.sourceImage.width,
-        height: scene.sourceImage.height,
-        aspect: scene.sourceImage.aspectRatio,
+        width: norm.sourceImage?.width || 1920,
+        height: norm.sourceImage?.height || 1080,
+        aspect: norm.sourceImage?.aspectRatio || 1.777,
       },
       depthVisualizationUrl: depthVisUrl,
       visualizationMode:
-        scene.representations.spatial_photo?.status === "ready"
+        norm.representations?.spatial_photo?.status === "ready"
           ? "spatial_photo"
-          : scene.entities.length > 0
+          : norm.entities?.length > 0
           ? "detection"
           : "original",
     });
   },
 
   reconcileAuthoritativeScene: (scene) => {
+    const norm = normalizeScene(scene);
     const state = get();
     let depthVisUrl = state.depthVisualizationUrl;
     const uri =
-      scene.depth?.visualizationUri ||
-      (scene.depth as unknown as Record<string, string>)?.visualization_uri;
+      norm.depth?.visualizationUri ||
+      (norm.depth as unknown as Record<string, string>)?.visualization_uri;
     if (uri) {
       depthVisUrl = uri.startsWith("http") ? uri : `${API_BASE}${uri}`;
     }
 
     // Preserve active visualization mode if it is ready, otherwise fall back to original
     set({
-      currentScene: scene,
+      currentScene: norm,
       depthVisualizationUrl: depthVisUrl,
       photoDimensions: {
-        width: scene.sourceImage.width,
-        height: scene.sourceImage.height,
-        aspect: scene.sourceImage.aspectRatio,
+        width: norm.sourceImage?.width || 1920,
+        height: norm.sourceImage?.height || 1080,
+        aspect: norm.sourceImage?.aspectRatio || 1.777,
       },
     });
   },

@@ -5,6 +5,7 @@
 
 import { HealthResponse, VersionResponse, AssetUploadResponse, ProcessingEvent } from "@photo-to-3d/shared-types";
 import { Scene, Project, ProjectSettings, Vector3D, EulerRotation } from "@photo-to-3d/scene-schema";
+import { normalizeScene } from "./scene-normalizer";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000";
 
@@ -77,7 +78,11 @@ export class ApiClient {
       throw new Error(errBody?.error?.message || `Upload failed with status ${res.status}`);
     }
 
-    return res.json();
+    const data = await res.json();
+    return {
+      asset: data.asset,
+      scene: data.scene ? normalizeScene(data.scene) : undefined,
+    };
   }
 
   async getScene(sceneId: string): Promise<Scene> {
@@ -88,7 +93,8 @@ export class ApiClient {
     if (!res.ok) {
       throw new Error(`Failed to fetch scene ${sceneId}`);
     }
-    return res.json();
+    const data = await res.json();
+    return normalizeScene(data);
   }
 
   async triggerAnalysis(
@@ -340,7 +346,8 @@ export class ApiClient {
       const err = await res.json().catch(() => ({}));
       throw new Error(err?.error?.message || `Failed to update transform (status ${res.status})`);
     }
-    return res.json();
+    const data = await res.json();
+    return normalizeScene(data);
   }
 
   async resetEntityTransform(sceneId: string, entityId: string): Promise<Scene> {
@@ -351,7 +358,8 @@ export class ApiClient {
       const err = await res.json().catch(() => ({}));
       throw new Error(err?.error?.message || `Failed to reset transform (status ${res.status})`);
     }
-    return res.json();
+    const data = await res.json();
+    return normalizeScene(data);
   }
 
   getMeshExportUrl(sceneId: string, entityId: string, applyTransform: boolean = false): string {

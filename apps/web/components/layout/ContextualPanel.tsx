@@ -51,6 +51,11 @@ export const ContextualPanel: React.FC = () => {
   const handleRunAnalysis = async () => {
     if (!currentScene) return;
 
+    if (currentScene.id.startsWith("local-")) {
+      setError("Photograph has not completed upload to local storage yet. Please re-upload.");
+      return;
+    }
+
     try {
       setAnalysisState(true, "Queuing progressive analysis pipeline...", 0.05);
       setError(null);
