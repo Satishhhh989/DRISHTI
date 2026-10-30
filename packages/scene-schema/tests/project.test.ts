@@ -75,3 +75,4 @@ describe("Phase 09: Project Model Schema and Validation", () => {
     expect(res.errors.some((e) => e.path === "assetManifest")).toBe(true);
   });
 });
+

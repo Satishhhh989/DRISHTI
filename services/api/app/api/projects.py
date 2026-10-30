@@ -73,3 +73,4 @@ async def import_project(
     from app.export.engine import export_engine
     content = await file.read()
     return export_engine.import_portable_project_archive(content, new_name=new_name)
+

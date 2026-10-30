@@ -58,3 +58,4 @@ class Project(BaseModel):
         if v != SCHEMA_VERSION:
             raise ValueError(f"Unsupported schema version: '{v}'. Expected '{SCHEMA_VERSION}'")
         return v
+

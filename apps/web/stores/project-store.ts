@@ -180,3 +180,4 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
 
   clearProject: () => set({ currentProject: null, isDirty: false, saveStatusMessage: null }),
 }));
+
