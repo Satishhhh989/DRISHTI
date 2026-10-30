@@ -282,3 +282,4 @@ describe("Phase 08 Unified Hybrid Renderer & Representation System", () => {
     expect(model1).not.toBe(model2); // Distinct cloned Three.Group instances sharing geometry
   });
 });
+

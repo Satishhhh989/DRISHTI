@@ -1,5 +1,6 @@
 import {
   CURRENT_SCHEMA_VERSION,
+  Project,
   RepresentationStatus,
   Scene,
   SceneEntity,
@@ -188,6 +189,49 @@ export function validateScene(raw: unknown): ValidationResult<Scene> {
     isValid: errors.length === 0,
     errors,
     value: errors.length === 0 ? (scene as Scene) : undefined
+  };
+}
+
+export function validateProject(raw: unknown): ValidationResult<Project> {
+  const errors: ValidationError[] = [];
+
+  if (!raw || typeof raw !== "object") {
+    return {
+      isValid: false,
+      errors: [{ path: "root", message: "Project root must be an object", code: "INVALID_ROOT" }]
+    };
+  }
+
+  const proj = raw as Partial<Project>;
+
+  if (!proj.id || typeof proj.id !== "string" || proj.id.trim().length === 0) {
+    errors.push({ path: "id", message: "Project ID is required", code: "REQUIRED_FIELD" });
+  }
+
+  if (proj.schemaVersion !== CURRENT_SCHEMA_VERSION) {
+    errors.push({
+      path: "schemaVersion",
+      message: `Unsupported schemaVersion: "${proj.schemaVersion}". Supported version is "${CURRENT_SCHEMA_VERSION}"`,
+      code: "UNSUPPORTED_VERSION"
+    });
+  }
+
+  if (!proj.name || typeof proj.name !== "string" || proj.name.trim().length === 0) {
+    errors.push({ path: "name", message: "Project name is required", code: "REQUIRED_FIELD" });
+  }
+
+  if (!proj.sceneId || typeof proj.sceneId !== "string" || proj.sceneId.trim().length === 0) {
+    errors.push({ path: "sceneId", message: "sceneId reference is required", code: "REQUIRED_FIELD" });
+  }
+
+  if (!Array.isArray(proj.assetManifest)) {
+    errors.push({ path: "assetManifest", message: "assetManifest must be an array", code: "INVALID_TYPE" });
+  }
+
+  return {
+    isValid: errors.length === 0,
+    errors,
+    value: errors.length === 0 ? (proj as Project) : undefined
   };
 }
 

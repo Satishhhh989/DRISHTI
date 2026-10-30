@@ -3,6 +3,7 @@
 import React from "react";
 import { getRepresentationEntry } from "@photo-to-3d/scene-schema";
 import { useSceneStore } from "@/stores/scene-store";
+import { useProjectStore } from "@/stores/project-store";
 import { useUIStore } from "@/stores/ui-store";
 import { apiClient } from "@/lib/api-client";
 import styles from "./ContextualPanel.module.css";
@@ -26,9 +27,13 @@ export const ContextualPanel: React.FC = () => {
     (state) => state.reconcileAuthoritativeScene
   );
   const toggleEntityVisibility = useSceneStore((state) => state.toggleEntityVisibility);
+  const updateEntityTransform = useSceneStore((state) => state.updateEntityTransform);
+  const resetEntityTransform = useSceneStore((state) => state.resetEntityTransform);
   const setEntityAnimation = useSceneStore((state) => state.setEntityAnimation);
   const toggleEntitySkeleton = useSceneStore((state) => state.toggleEntitySkeleton);
   const resetEntityPose = useSceneStore((state) => state.resetEntityPose);
+
+  const markDirty = useProjectStore((state) => state.markDirty);
 
   const isInspectorOpen = useUIStore((state) => state.isInspectorOpen);
   const selectedEntityId = useUIStore((state) => state.selectedEntityId);
@@ -83,6 +88,64 @@ export const ContextualPanel: React.FC = () => {
       setError(msg);
       setAnalysisState(false, null, 0);
     }
+  };
+
+  const handlePositionChange = (axis: "x" | "y" | "z", delta: number) => {
+    if (!selectedEntity) return;
+    const currentPos = selectedEntity.transform?.position || { x: 0, y: 0, z: -1.5 };
+    const currentVal = currentPos[axis] ?? 0;
+    const newVal = Math.round((currentVal + delta) * 100) / 100;
+    updateEntityTransform(selectedEntity.id, {
+      ...selectedEntity.transform,
+      position: {
+        ...currentPos,
+        [axis]: newVal,
+      },
+    });
+    markDirty();
+  };
+
+  const handleRotationChange = (axis: "x" | "y" | "z", deltaDeg: number) => {
+    if (!selectedEntity) return;
+    const currentRot = selectedEntity.transform?.rotation || { x: 0, y: 0, z: 0 };
+    const currentRad = currentRot[axis] ?? 0;
+    const currentDeg = (currentRad * 180) / Math.PI;
+    const newRad = ((currentDeg + deltaDeg) * Math.PI) / 180;
+    updateEntityTransform(selectedEntity.id, {
+      ...selectedEntity.transform,
+      rotation: {
+        ...currentRot,
+        [axis]: Math.round(newRad * 1000) / 1000,
+      },
+    });
+    markDirty();
+  };
+
+  const handleScaleChange = (delta: number) => {
+    if (!selectedEntity) return;
+    const currentScale = selectedEntity.transform?.scale || { x: 1, y: 1, z: 1 };
+    const currentVal = currentScale.x ?? 1;
+    const newVal = Math.max(0.1, Math.min(5.0, Math.round((currentVal + delta) * 10) / 10));
+    updateEntityTransform(selectedEntity.id, {
+      ...selectedEntity.transform,
+      scale: { x: newVal, y: newVal, z: newVal },
+    });
+    markDirty();
+  };
+
+  const handleResetTransform = () => {
+    if (!selectedEntity) return;
+    resetEntityTransform(selectedEntity.id);
+    markDirty();
+    setStatusNotice(`Reset transform for ${selectedEntity.name || selectedEntity.id}.`);
+  };
+
+  const handleExportEntityMesh = () => {
+    if (!currentScene || !selectedEntity) return;
+    if (!selectedEntity.reconstruction || selectedEntity.reconstruction.status !== "ready") return;
+    const url = apiClient.getMeshExportUrl(currentScene.id, selectedEntity.id, true);
+    window.open(url, "_blank");
+    setStatusNotice(`Exported 3D mesh for ${selectedEntity.name || selectedEntity.id} (GLB).`);
   };
 
   // Compute honest stage metrics
@@ -720,10 +783,219 @@ export const ContextualPanel: React.FC = () => {
               </div>
             )}
 
-            {/* 3D Scene Placement (Phase 06) */}
-            <div style={{ marginTop: "10px", paddingTop: "8px", borderTop: "1px solid #27272e" }}>
-              <div className={styles.sectionHeader} style={{ marginBottom: "6px" }}>3D Scene Placement</div>
-              <div className={styles.propRow}>
+            {/* 3D Scene Placement & Interactive Transforms (Phase 06 & 09) */}
+            <div style={{ marginTop: "10px", paddingTop: "8px", borderTop: "1px solid #27272e" }} data-testid="transform-controls-section">
+              <div className={styles.sectionHeader} style={{ marginBottom: "6px" }}>
+                <span>Transform Controls</span>
+                <span className={styles.propValue} style={{ fontSize: "10px" }}>Metric</span>
+              </div>
+
+              {selectedEntity.transform && (
+                <div className={styles.transformGroup}>
+                  {/* Position (m) */}
+                  <div style={{ fontSize: "10px", color: "#71717a", fontWeight: 600, marginBottom: "2px" }}>
+                    POSITION (M)
+                  </div>
+                  <div className={styles.transformRow}>
+                    <span className={`${styles.axisLabel} ${styles.x}`}>X</span>
+                    <div className={styles.axisControls}>
+                      <button
+                        type="button"
+                        className={styles.stepBtn}
+                        onClick={() => handlePositionChange("x", -0.1)}
+                        title="Move left 0.1m"
+                        data-testid="step-x-dec"
+                      >
+                        -
+                      </button>
+                      <input
+                        type="number"
+                        step="0.05"
+                        className={styles.axisInput}
+                        value={(selectedEntity.transform.position.x ?? 0).toFixed(2)}
+                        onChange={(e) => {
+                          const val = parseFloat(e.target.value);
+                          if (!isNaN(val)) {
+                            updateEntityTransform(selectedEntity.id, {
+                              ...selectedEntity.transform,
+                              position: { ...selectedEntity.transform.position, x: val },
+                            });
+                            markDirty();
+                          }
+                        }}
+                        data-testid="input-pos-x"
+                      />
+                      <button
+                        type="button"
+                        className={styles.stepBtn}
+                        onClick={() => handlePositionChange("x", 0.1)}
+                        title="Move right 0.1m"
+                        data-testid="step-x-inc"
+                      >
+                        +
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className={styles.transformRow}>
+                    <span className={`${styles.axisLabel} ${styles.y}`}>Y</span>
+                    <div className={styles.axisControls}>
+                      <button
+                        type="button"
+                        className={styles.stepBtn}
+                        onClick={() => handlePositionChange("y", -0.1)}
+                        title="Move down 0.1m"
+                        data-testid="step-y-dec"
+                      >
+                        -
+                      </button>
+                      <input
+                        type="number"
+                        step="0.05"
+                        className={styles.axisInput}
+                        value={(selectedEntity.transform.position.y ?? 0).toFixed(2)}
+                        onChange={(e) => {
+                          const val = parseFloat(e.target.value);
+                          if (!isNaN(val)) {
+                            updateEntityTransform(selectedEntity.id, {
+                              ...selectedEntity.transform,
+                              position: { ...selectedEntity.transform.position, y: val },
+                            });
+                            markDirty();
+                          }
+                        }}
+                        data-testid="input-pos-y"
+                      />
+                      <button
+                        type="button"
+                        className={styles.stepBtn}
+                        onClick={() => handlePositionChange("y", 0.1)}
+                        title="Move up 0.1m"
+                        data-testid="step-y-inc"
+                      >
+                        +
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className={styles.transformRow}>
+                    <span className={`${styles.axisLabel} ${styles.z}`}>Z</span>
+                    <div className={styles.axisControls}>
+                      <button
+                        type="button"
+                        className={styles.stepBtn}
+                        onClick={() => handlePositionChange("z", -0.1)}
+                        title="Move deeper 0.1m"
+                        data-testid="step-z-dec"
+                      >
+                        -
+                      </button>
+                      <input
+                        type="number"
+                        step="0.05"
+                        className={styles.axisInput}
+                        value={(selectedEntity.transform.position.z ?? 0).toFixed(2)}
+                        onChange={(e) => {
+                          const val = parseFloat(e.target.value);
+                          if (!isNaN(val)) {
+                            updateEntityTransform(selectedEntity.id, {
+                              ...selectedEntity.transform,
+                              position: { ...selectedEntity.transform.position, z: val },
+                            });
+                            markDirty();
+                          }
+                        }}
+                        data-testid="input-pos-z"
+                      />
+                      <button
+                        type="button"
+                        className={styles.stepBtn}
+                        onClick={() => handlePositionChange("z", 0.1)}
+                        title="Move closer 0.1m"
+                        data-testid="step-z-inc"
+                      >
+                        +
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Rotation Euler Y (yaw) */}
+                  <div style={{ fontSize: "10px", color: "#71717a", fontWeight: 600, marginTop: "6px", marginBottom: "2px" }}>
+                    ROTATION Y (DEG)
+                  </div>
+                  <div className={styles.transformRow}>
+                    <span className={`${styles.axisLabel} ${styles.y}`}>Y</span>
+                    <div className={styles.axisControls}>
+                      <button
+                        type="button"
+                        className={styles.stepBtn}
+                        onClick={() => handleRotationChange("y", -15)}
+                        title="Rotate -15°"
+                        data-testid="step-rot-y-dec"
+                      >
+                        -
+                      </button>
+                      <span className={styles.axisInput} style={{ textAlign: "center" }} data-testid="value-rot-y">
+                        {Math.round(((selectedEntity.transform.rotation?.y ?? 0) * 180) / Math.PI)}°
+                      </span>
+                      <button
+                        type="button"
+                        className={styles.stepBtn}
+                        onClick={() => handleRotationChange("y", 15)}
+                        title="Rotate +15°"
+                        data-testid="step-rot-y-inc"
+                      >
+                        +
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Scale */}
+                  <div style={{ fontSize: "10px", color: "#71717a", fontWeight: 600, marginTop: "6px", marginBottom: "2px" }}>
+                    UNIFORM SCALE
+                  </div>
+                  <div className={styles.transformRow}>
+                    <span className={styles.axisLabel}>S</span>
+                    <div className={styles.axisControls}>
+                      <button
+                        type="button"
+                        className={styles.stepBtn}
+                        onClick={() => handleScaleChange(-0.1)}
+                        title="Scale down 10%"
+                        data-testid="step-scale-dec"
+                      >
+                        -
+                      </button>
+                      <span className={styles.axisInput} style={{ textAlign: "center" }} data-testid="value-scale">
+                        {(selectedEntity.transform.scale?.x ?? 1).toFixed(2)}x
+                      </span>
+                      <button
+                        type="button"
+                        className={styles.stepBtn}
+                        onClick={() => handleScaleChange(0.1)}
+                        title="Scale up 10%"
+                        data-testid="step-scale-inc"
+                      >
+                        +
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Reset Transform Button */}
+                  <button
+                    type="button"
+                    className={styles.actionButton}
+                    onClick={handleResetTransform}
+                    title="Reset entity transform to initial assembled placement"
+                    data-testid="reset-transform-btn"
+                    style={{ marginTop: "6px", padding: "4px 8px", fontSize: "10px" }}
+                  >
+                    Reset Transform
+                  </button>
+                </div>
+              )}
+
+              <div className={styles.propRow} style={{ marginTop: "6px" }}>
                 <span className={styles.propLabel}>Placement Method</span>
                 <span className={styles.propValue} style={{ fontSize: "10px" }} data-testid="placement-method">
                   {selectedEntity.placement?.method || "Depth-Projected Composition"}
@@ -733,18 +1005,12 @@ export const ContextualPanel: React.FC = () => {
                 <div className={styles.propRow}>
                   <span className={styles.propLabel}>3D Position</span>
                   <span className={styles.propValue} style={{ fontSize: "10px" }} data-testid="placement-position">
-                    X: {(selectedEntity.transform.position.x ?? (selectedEntity.transform.position as unknown as number[])[0] ?? 0).toFixed(2)}m,{" "}
-                    Y: {(selectedEntity.transform.position.y ?? (selectedEntity.transform.position as unknown as number[])[1] ?? 0).toFixed(2)}m,{" "}
-                    Z: {(selectedEntity.transform.position.z ?? (selectedEntity.transform.position as unknown as number[])[2] ?? 0).toFixed(2)}m
+                    X: {(selectedEntity.transform.position.x ?? 0).toFixed(2)}m,{" "}
+                    Y: {(selectedEntity.transform.position.y ?? 0).toFixed(2)}m,{" "}
+                    Z: {(selectedEntity.transform.position.z ?? 0).toFixed(2)}m
                   </span>
                 </div>
               )}
-              <div className={styles.propRow}>
-                <span className={styles.propLabel}>Depth Source</span>
-                <span className={styles.propValue} style={{ fontSize: "10px" }}>
-                  {selectedEntity.placement?.depthSource || (selectedEntity.depth ? "Relative Proximity" : "Fallback Plane")}
-                </span>
-              </div>
               <div className={styles.propRow}>
                 <span className={styles.propLabel}>Visibility</span>
                 <span
@@ -755,23 +1021,42 @@ export const ContextualPanel: React.FC = () => {
                   {selectedEntity.visibility === false ? "Hidden" : "Visible"}
                 </span>
               </div>
-              {selectedEntity.placement?.uncertaintyFlags && selectedEntity.placement.uncertaintyFlags.length > 0 && (
-                <div className={styles.propRow}>
-                  <span className={styles.propLabel}>Flags</span>
-                  <span className={styles.propValue} style={{ fontSize: "9px", color: "#f59e0b" }}>
-                    {selectedEntity.placement.uncertaintyFlags.join(", ")}
-                  </span>
-                </div>
-              )}
-              <button
-                type="button"
-                className={styles.actionButton}
-                onClick={focusEntity}
-                data-testid="focus-entity-btn"
-                style={{ marginTop: "6px", padding: "5px 8px", fontSize: "11px" }}
-              >
-                Focus Camera on Person
-              </button>
+
+              {/* Action Buttons: Focus and Export Mesh */}
+              <div style={{ display: "flex", gap: "6px", marginTop: "8px" }}>
+                <button
+                  type="button"
+                  className={styles.actionButton}
+                  onClick={focusEntity}
+                  data-testid="focus-entity-btn"
+                  style={{ flex: 1, padding: "5px 8px", fontSize: "11px" }}
+                >
+                  Focus Camera
+                </button>
+
+                <button
+                  type="button"
+                  className={styles.actionButton}
+                  onClick={handleExportEntityMesh}
+                  disabled={selectedEntity.reconstruction?.status !== "ready"}
+                  title={
+                    selectedEntity.reconstruction?.status === "ready"
+                      ? "Export reconstructed 3D mesh (GLB)"
+                      : "Mesh not reconstructed yet"
+                  }
+                  data-testid="export-entity-mesh-btn"
+                  style={{
+                    flex: 1,
+                    padding: "5px 8px",
+                    fontSize: "11px",
+                    background: selectedEntity.reconstruction?.status === "ready" ? "#312e81" : "#1e1e24",
+                    borderColor: selectedEntity.reconstruction?.status === "ready" ? "#6366f1" : "#2e2e38",
+                    color: selectedEntity.reconstruction?.status === "ready" ? "#e0e7ff" : "#71717a",
+                  }}
+                >
+                  Export Mesh
+                </button>
+              </div>
             </div>
 
             {/* 3D Skeleton (Phase 07) */}

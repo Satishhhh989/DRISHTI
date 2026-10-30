@@ -79,3 +79,4 @@ describe("Representation Registry (Phase 08)", () => {
     expect(is3DRepresentation("original")).toBe(false);
   });
 });
+

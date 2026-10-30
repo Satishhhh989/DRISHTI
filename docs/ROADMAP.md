@@ -12,40 +12,38 @@
 | **Phase 06** | **Multi-Person Scene Assembly** | **COMPLETED** | Multi-person spatial scene assembly, relative depth & horizontal positioning, ground contact alignment, occlusion reconciliation, partial reconstruction resilience, camera auto-framing ("Fit Scene" & "Focus Person"), visibility toggle, local scene JSON persistence. |
 | **Phase 07** | **DRISHTI Motion: Skeleton, Rigging & Animation** | **COMPLETED** | Canonical 24-joint kinematic skeleton, 2D pose estimation (YOLOv8-pose), SMPL 3D joint regression, normalized linear blend skinning weights (top-4 influences), deterministic procedural animation clips (idle, twist, wave, walk), interactive viewport controls, independent character playback. |
 | **Phase 08** | **Unified Hybrid Renderer** | **COMPLETED** | Single-scene multi-representation architecture, formal representation registry (9 modes), shared scene state and camera contract, unified asset cache, 2D/3D navigation policy, articulated mode, and hybrid combined scene viewing. |
-| **Phase 09** | **Scene Editing & Interactive Directing** | **PLANNED** | Interactive 3D scene compositing, spatial staging, lighting controls, multi-character timelines, and scene export. |
-| **Phase 10** | **Polish, Export & Performance** | Planned | Production packaging, GLTF/USDZ export, performance optimization, and offline deployment. |
+| **Phase 09** | **Interaction, Persistence & Export** | **COMPLETED** | Local project management, atomic disk persistence, asset manifests, interactive transform editing (position, rotation, scale, bounds validation, reset), scene hierarchy & inspector, single entity GLB export, multi-person assembled GLB export with node transforms, metadata JSON export, portable project ZIP archives with anti-zip-slip protection, archive reimport. |
+| **Phase 10** | **Polish, Production & Release** | **PLANNED** | Production packaging, performance tuning, offline deployment, and final release. |
 
 ---
 
-## Current Status: Phase 08 Completed
+## Current Status: Phase 09 Completed
 
-Phase 08 implements the **Unified Hybrid Renderer**, integrating all capabilities across Phases 01 through 07 into a unified, consistent, interactive rendering architecture:
-- **Representation Registry (`packages/scene-schema/src/registry.ts`)**:
-  - Central registry declaring 9 canonical representations (`original`, `detection`, `segmentation`, `depth`, `spatial_photo`, `wireframe`, `solid3d`, `articulated`, `combined`).
-  - Formal declaration of display names, categories, required assets, supported scene types, rendering behaviors, known limitations, and interactive capabilities.
-- **Unified Asset Cache (`apps/web/lib/asset-cache.ts`)**:
-  - Deduplicated in-memory template caching for GLTF models and textures.
-  - Eliminates duplicate network requests and re-parsing across mode switches.
-  - Shared geometry buffer reuse across solid, wireframe, articulated, and combined views.
-  - Explicit resource disposal on scene change or unmount.
-- **Single Camera & Navigation Contract (`CameraController.tsx`)**:
-  - Clear separation between 2D photographic inspection (pure pan/zoom with rotation locked) and 3D scene navigation (unconstrained 360-degree orbit, pan, zoom, fit, focus).
-  - Restrained parallax orbit in Spatial Photo mode ($\pm 18^\circ$ azimuth, $75^\circ \text{--} 105^\circ$ polar).
-  - 3D camera state preservation: switching between `solid3d` $\leftrightarrow$ `wireframe` $\leftrightarrow$ `articulated` $\leftrightarrow$ `combined` maintains the user's active camera orbit and zoom.
-  - Reliable fit-to-view computing bounds for 2D photographs and 3D multi-person meshes.
-- **Unified Person Selection & Visibility**:
-  - Stable person entity IDs and selected entity state preserved across all representations.
-  - Per-entity visibility state maintained across representations.
-  - Focus Camera on Person centers the camera on the selected entity's 3D mesh volume.
-- **Hybrid Combined Scene Representation**:
-  - Unifies 3D assembled human meshes with an upright photographic spatial reference plane ($Z = -0.6\text{m}$, 85% opacity, locked aspect ratio).
-- **Full Test Coverage**: **148 automated tests passing** across 5 test suites (88 backend pytest, 32 web vitest, 14 schema vitest, 2 shared-types vitest, and 12 Playwright E2E).
+Phase 09 transforms DRISHTI into a fully functional, persistent scene-editing workspace with real local asset export:
+- **Project Model & Asset Manifest (`packages/scene-schema`, `services/api/app/schemas/project.py`)**:
+  - Stable project identifier, versioned metadata, creation and last-modified timestamps, scene references, workspace settings, processing state, and structured asset manifest.
+  - Manifest tracks all referenced source photos, masks, depth maps, and reconstructed GLB meshes with relative paths and SHA-256 checksums.
+- **Reliable Local Project Persistence (`services/api/app/project/manager.py`)**:
+  - Atomic saves via temporary files (`.tmp` write, flush, atomic replace) to prevent corruption during interrupted writes.
+  - Resilient project loading that reports missing assets without deleting or clobbering valid project data.
+  - Recent projects discovery and sorting.
+- **Scene Interaction & Transform Controls (`apps/web`, `services/api/app/api/scenes.py`)**:
+  - User can select individual reconstructed people and edit Position ($X, Y, Z$), Rotation (Euler $Y$), and Uniform Scale.
+  - Server-side constraint validation: rejects non-finite numbers, bounds position to $[-50\text{m}, 50\text{m}]$, and validates scale within $[0.05, 10.0]$.
+  - Reliable Reset Transform operation restoring initial depth-projected placement coordinates.
+  - Workspace dirty tracking: unsaved changes indicator appears on edits; cleared upon saving.
+- **Real Local Export Engine (`services/api/app/export/engine.py`, `services/api/app/api/export.py`)**:
+  - **Single Entity Mesh (GLB)**: Exports validated 3D mesh with neutral studio clay material; rejects export of unreconstructed entities without fake placeholder fabrication.
+  - **Assembled Multi-Person Scene (GLB)**: Exports multi-person 3D scene preserving relative positions, rotations, and node transforms.
+  - **Scene Metadata (JSON)**: Exports canonical scene metadata.
+  - **Portable Project Archive (.zip)**: Exports self-contained ZIP archive containing `project.json`, `scene.json`, `manifest.json`, and all referenced local assets.
+  - **Safe Project Archive Reimport**: Imports portable project ZIP archives with strict Path Traversal (Anti-Zip-Slip) defense and schema validation.
+- **Full Test Coverage**: **172 automated tests passing** across 5 test suites (102 backend pytest, 37 web vitest, 18 schema vitest, 2 shared-types vitest, and 13 Playwright E2E).
 
 ---
 
-## Next Mission: Phase 09 — Scene Editing & Interactive Directing
+## Next Mission: Phase 10 — Polish, Production & Release
 
-Phase 09 will focus on:
-1. Interactive 3D scene compositing and spatial staging.
-2. Dynamic lighting controls and multi-character timelines.
-3. Scene export (GLTF / USDZ) and persistent directing tools.
+Phase 10 will focus on:
+1. End-to-end user experience polish and cross-platform desktop packaging.
+2. Production builds, runtime performance optimizations, and final release verification.

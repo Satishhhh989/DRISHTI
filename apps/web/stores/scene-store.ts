@@ -7,7 +7,7 @@
  */
 
 import { create } from "zustand";
-import { Scene, VisualizationMode, RepresentationMode, createInitialScene } from "@photo-to-3d/scene-schema";
+import { Scene, VisualizationMode, RepresentationMode, Transform, createInitialScene } from "@photo-to-3d/scene-schema";
 import { ProcessingEvent } from "@photo-to-3d/shared-types";
 import { apiClient } from "@/lib/api-client";
 import { assetCache } from "@/lib/asset-cache";
@@ -51,6 +51,8 @@ interface SceneState {
   ) => void;
   cancelActiveJob: () => Promise<void>;
   toggleEntityVisibility: (entityId: string) => void;
+  updateEntityTransform: (entityId: string, transform: Transform) => void;
+  resetEntityTransform: (entityId: string) => void;
   setEntityAnimation: (
     entityId: string,
     clipName: string | null,
@@ -248,6 +250,65 @@ export const useSceneStore = create<SceneState>((set, get) => ({
         entities: updatedEntities,
       },
     });
+  },
+
+  updateEntityTransform: (entityId, transform) => {
+    const { currentScene } = get();
+    if (!currentScene) return;
+    const updatedEntities = currentScene.entities.map((e) =>
+      e.id === entityId ? { ...e, transform } : e
+    );
+    set({
+      currentScene: {
+        ...currentScene,
+        entities: updatedEntities,
+      },
+    });
+    // Async server sync if scene is stored on backend
+    if (!currentScene.id.startsWith("local-")) {
+      apiClient.updateEntityTransform(currentScene.id, entityId, transform).catch(() => {});
+    }
+  },
+
+  resetEntityTransform: (entityId) => {
+    const { currentScene } = get();
+    if (!currentScene) return;
+    const target = currentScene.entities.find((e) => e.id === entityId);
+    if (!target) return;
+
+    let defaultTransform: Transform = {
+      position: { x: 0, y: 0, z: -1.5 },
+      rotation: { x: 0, y: 0, z: 0 },
+      scale: { x: 1, y: 1, z: 1 },
+    };
+
+    if (target.placement) {
+      const coords = target.placement.imageSpaceCoords || [0.5, 0.5];
+      const x = (coords[0] - 0.5) * 2.0;
+      const z = target.placement.relativeProximity != null
+        ? -0.5 - (1.0 - target.placement.relativeProximity) * 3.0
+        : -1.5;
+      const rot = target.placement.orientationCorrection || [0, 0, 0];
+      defaultTransform = {
+        position: { x: Math.round(x * 1000) / 1000, y: 0, z: Math.round(z * 1000) / 1000 },
+        rotation: { x: rot[0], y: rot[1], z: rot[2] },
+        scale: { x: 1, y: 1, z: 1 },
+      };
+    }
+
+    const updatedEntities = currentScene.entities.map((e) =>
+      e.id === entityId ? { ...e, transform: defaultTransform } : e
+    );
+    set({
+      currentScene: {
+        ...currentScene,
+        entities: updatedEntities,
+      },
+    });
+
+    if (!currentScene.id.startsWith("local-")) {
+      apiClient.resetEntityTransform(currentScene.id, entityId).catch(() => {});
+    }
   },
 
   setEntityAnimation: (entityId, clipName, isPlaying, playbackSpeed = 1.0, loop = true) => {

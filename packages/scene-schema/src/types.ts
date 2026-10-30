@@ -425,3 +425,45 @@ export interface Scene {
   processingStatus: SceneProcessingStatus;
   activeJobId?: string | null;
 }
+
+/**
+ * Phase 09: Project Model & Asset Manifest
+ */
+export interface ProjectAssetEntry {
+  assetId: string;
+  assetType: "source_photo" | "depth_map" | "mask" | "mesh" | "skeleton" | "other";
+  relativePath: string;
+  filename: string;
+  checksumSha256?: string;
+  sizeBytes?: number;
+  mimeType?: string;
+}
+
+export interface ProjectSettings {
+  activeRepresentation?: string;
+  showGrid?: boolean;
+  showReferencePlane?: boolean;
+}
+
+export interface ProjectProcessingState {
+  detection: boolean;
+  segmentation: boolean;
+  depth: boolean;
+  reconstruction: boolean;
+  assembly: boolean;
+  motion: boolean;
+}
+
+export interface Project {
+  id: string;
+  name: string;
+  schemaVersion: string;
+  createdAt: string;
+  updatedAt: string;
+  sceneId: string;
+  sourceImage: SourceImageMetadata;
+  settings: ProjectSettings;
+  assetManifest: ProjectAssetEntry[];
+  processingState: ProjectProcessingState;
+  metadata?: Record<string, unknown>;
+}

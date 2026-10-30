@@ -28,6 +28,12 @@ from app.schemas.assets import (
     AssetMetadata,
     AssetDimensions,
 )
+from app.schemas.project import (
+    Project,
+    ProjectAssetEntry,
+    ProjectSettings,
+    ProjectProcessingState,
+)
 
 __all__ = [
     "Vector3D",
@@ -52,5 +58,9 @@ __all__ = [
     "AssetCategory",
     "AssetMetadata",
     "AssetDimensions",
+    "Project",
+    "ProjectAssetEntry",
+    "ProjectSettings",
+    "ProjectProcessingState",
 ]
 

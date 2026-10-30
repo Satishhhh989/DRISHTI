@@ -4,7 +4,7 @@
  */
 
 import { HealthResponse, VersionResponse, AssetUploadResponse, ProcessingEvent } from "@photo-to-3d/shared-types";
-import { Scene } from "@photo-to-3d/scene-schema";
+import { Scene, Project, ProjectSettings, Vector3D, EulerRotation } from "@photo-to-3d/scene-schema";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000";
 
@@ -272,6 +272,117 @@ export class ApiClient {
     });
     if (!res.ok) {
       throw new Error(`Hardware endpoint failed with status ${res.status}`);
+    }
+    return res.json();
+  }
+
+  // --- Phase 09: Project & Export Methods ---
+
+  async listProjects(): Promise<{ projects: Project[]; total: number }> {
+    const res = await fetch(`${this.base}/api/v1/projects`, {
+      method: "GET",
+      cache: "no-store",
+    });
+    if (!res.ok) {
+      throw new Error(`Failed to list projects (status ${res.status})`);
+    }
+    return res.json();
+  }
+
+  async createProject(sceneId: string, name?: string, settings?: ProjectSettings): Promise<Project> {
+    const res = await fetch(`${this.base}/api/v1/projects`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ scene_id: sceneId, name, settings }),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err?.error?.message || `Failed to create project (status ${res.status})`);
+    }
+    return res.json();
+  }
+
+  async getProject(projectId: string): Promise<Project> {
+    const res = await fetch(`${this.base}/api/v1/projects/${projectId}`, {
+      method: "GET",
+      cache: "no-store",
+    });
+    if (!res.ok) {
+      throw new Error(`Failed to get project ${projectId} (status ${res.status})`);
+    }
+    return res.json();
+  }
+
+  async saveProject(projectId: string, name?: string, settings?: ProjectSettings): Promise<Project> {
+    const res = await fetch(`${this.base}/api/v1/projects/${projectId}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name, settings }),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err?.error?.message || `Failed to save project (status ${res.status})`);
+    }
+    return res.json();
+  }
+
+  async updateEntityTransform(
+    sceneId: string,
+    entityId: string,
+    transform: { position?: Vector3D; rotation?: EulerRotation; scale?: Vector3D }
+  ): Promise<Scene> {
+    const res = await fetch(`${this.base}/api/v1/scenes/${sceneId}/entities/${entityId}/transform`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(transform),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err?.error?.message || `Failed to update transform (status ${res.status})`);
+    }
+    return res.json();
+  }
+
+  async resetEntityTransform(sceneId: string, entityId: string): Promise<Scene> {
+    const res = await fetch(`${this.base}/api/v1/scenes/${sceneId}/entities/${entityId}/reset-transform`, {
+      method: "POST",
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err?.error?.message || `Failed to reset transform (status ${res.status})`);
+    }
+    return res.json();
+  }
+
+  getMeshExportUrl(sceneId: string, entityId: string, applyTransform: boolean = false): string {
+    return `${this.base}/api/v1/export/mesh/${sceneId}/${entityId}?apply_transform=${applyTransform}`;
+  }
+
+  getSceneExportUrl(sceneId: string): string {
+    return `${this.base}/api/v1/export/scene/${sceneId}`;
+  }
+
+  getMetadataExportUrl(sceneId: string): string {
+    return `${this.base}/api/v1/export/metadata/${sceneId}`;
+  }
+
+  getProjectArchiveUrl(projectId: string): string {
+    return `${this.base}/api/v1/export/project/${projectId}/archive`;
+  }
+
+  async importProjectArchive(file: File, newName?: string): Promise<Project> {
+    const formData = new FormData();
+    formData.append("file", file);
+    if (newName) {
+      formData.append("new_name", newName);
+    }
+    const res = await fetch(`${this.base}/api/v1/projects/import`, {
+      method: "POST",
+      body: formData,
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err?.error?.message || `Import failed (status ${res.status})`);
     }
     return res.json();
   }

@@ -188,3 +188,4 @@ export function is2DRepresentation(mode: VisualizationMode): boolean {
     mode === "depth"
   );
 }
+

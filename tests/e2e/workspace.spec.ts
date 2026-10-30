@@ -1,11 +1,11 @@
 import { test, expect } from "@playwright/test";
 
-test.describe("Phase 01 - 08: Workspace & Viewport E2E Verification", () => {
+test.describe("Phase 01 - 09: Workspace & Viewport E2E Verification", () => {
   test("1. The application opens and renders workspace", async ({ page }) => {
     await page.goto("/");
     await expect(page.locator('[data-testid="workspace-root"]')).toBeVisible();
     await expect(page.getByText("PHOTO → 3D ENGINE")).toBeVisible();
-    await expect(page.getByText(/Phase 0[1-8]/)).toBeVisible();
+    await expect(page.getByText(/Phase 0[1-9]/)).toBeVisible();
   });
 
   test("2. The upload control is visible in top bar and empty viewport", async ({ page }) => {
@@ -198,5 +198,30 @@ test.describe("Phase 01 - 08: Workspace & Viewport E2E Verification", () => {
     // Return to Photo mode
     await photoTab.click();
     await expect(photoTab).toHaveAttribute("aria-pressed", "true");
+  });
+
+  test("13. Phase 09 Interaction, Persistence, and Export controls are present", async ({ page }) => {
+    await page.goto("/");
+
+    // Project management in top bar
+    const nameInput = page.locator('[data-testid="project-name-input"]');
+    await expect(nameInput).toBeVisible();
+
+    const saveBtn = page.locator('[data-testid="save-project-btn"]');
+    await expect(saveBtn).toBeVisible();
+
+    // Projects menu
+    const projectsMenuBtn = page.locator('[data-testid="projects-menu-btn"]');
+    await expect(projectsMenuBtn).toBeVisible();
+    await projectsMenuBtn.click();
+    await expect(page.locator('[data-testid="import-archive-btn"]')).toBeVisible();
+
+    // Export menu
+    const exportMenuBtn = page.locator('[data-testid="export-menu-btn"]');
+    await expect(exportMenuBtn).toBeVisible();
+    await exportMenuBtn.click();
+    await expect(page.locator('[data-testid="export-assembled-glb-btn"]')).toBeVisible();
+    await expect(page.locator('[data-testid="export-metadata-json-btn"]')).toBeVisible();
+    await expect(page.locator('[data-testid="export-portable-archive-btn"]')).toBeVisible();
   });
 });

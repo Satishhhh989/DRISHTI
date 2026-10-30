@@ -8,6 +8,10 @@ import { Scene, createInitialScene } from "@photo-to-3d/scene-schema";
 describe("Phase 04 Progressive Pipeline Inspector", () => {
   beforeEach(() => {
     useSceneStore.getState().clearScene();
+    global.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ status: "ok", projects: [] }),
+    });
   });
 
   it("renders the pipeline inspector and reflects idle state", async () => {
