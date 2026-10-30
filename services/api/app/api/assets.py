@@ -53,7 +53,7 @@ async def get_asset_metadata(asset_id: str) -> AssetMetadata:
     return asset_manager.get_asset(asset_id)
 
 
-@router.get("/{asset_id}/file")
+@router.api_route("/{asset_id}/file", methods=["GET", "HEAD"])
 async def get_asset_file(asset_id: str):
     file_path = asset_manager.get_asset_path(asset_id)
     meta = asset_manager.get_asset(asset_id)
@@ -64,12 +64,31 @@ async def get_asset_file(asset_id: str):
     )
 
 
-@router.get("/meshes/{filename}")
+@router.api_route("/meshes/{filename}", methods=["GET", "HEAD"])
 async def get_mesh_file(filename: str):
     safe_name = sanitize_filename(filename)
     path = asset_manager.store._resolve_safe_path(Path("meshes") / safe_name)
     if not path.exists():
-        raise NotFoundError(f"Mesh '{filename}' not found.")
+        # Check by registry lookup
+        found_path = None
+        for meta in list(asset_manager.store._registry.values()):
+            if meta.category == "mesh" and (meta.filename == safe_name or meta.asset_id == safe_name):
+                reg_path = asset_manager.store._resolve_safe_path(Path(meta.relative_path))
+                if reg_path.exists():
+                    found_path = reg_path
+                    break
+        if not found_path:
+            # Fallback: glob in meshes directory for *_{safe_name}
+            meshes_dir = asset_manager.store.root / "meshes"
+            if meshes_dir.exists():
+                matches = list(meshes_dir.glob(f"*_{safe_name}"))
+                if matches:
+                    found_path = matches[0]
+
+        if not found_path or not found_path.exists():
+            raise NotFoundError("Mesh", filename)
+        path = found_path
+
     return FileResponse(
         path=str(path),
         media_type="model/gltf-binary",

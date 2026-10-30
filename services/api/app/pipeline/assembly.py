@@ -9,7 +9,7 @@ original photograph's spatial composition and relative depth relationships.
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 import math
-from typing import Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple, Union
 
 from app.core.logging import logger
 from app.schemas.common import EulerRotation, Transform, Vector3D
@@ -44,19 +44,28 @@ class AssemblyResult:
     error_message: Optional[str] = None
 
 
-def compute_2d_iou(box_a: Tuple[float, float, float, float], box_b: Tuple[float, float, float, float]) -> float:
-    """Computes Intersection over Union for two normalized bounding boxes [x1, y1, x2, y2]."""
-    x_left = max(box_a[0], box_b[0])
-    y_top = max(box_a[1], box_b[1])
-    x_right = min(box_a[2], box_b[2])
-    y_bottom = min(box_a[3], box_b[3])
+def compute_2d_iou(box_a: Any, box_b: Any) -> float:
+    """Computes Intersection over Union for two normalized bounding boxes [x1, y1, x2, y2] or BoundingBox2D."""
+    if hasattr(box_a, "x_min"):
+        a = (box_a.x_min, box_a.y_min, box_a.x_max, box_a.y_max)
+    else:
+        a = tuple(box_a)
+    if hasattr(box_b, "x_min"):
+        b = (box_b.x_min, box_b.y_min, box_b.x_max, box_b.y_max)
+    else:
+        b = tuple(box_b)
+
+    x_left = max(a[0], b[0])
+    y_top = max(a[1], b[1])
+    x_right = min(a[2], b[2])
+    y_bottom = min(a[3], b[3])
 
     if x_right < x_left or y_bottom < y_top:
         return 0.0
 
     intersection_area = (x_right - x_left) * (y_bottom - y_top)
-    area_a = (box_a[2] - box_a[0]) * (box_a[3] - box_a[1])
-    area_b = (box_b[2] - box_b[0]) * (box_b[3] - box_b[1])
+    area_a = (a[2] - a[0]) * (a[3] - a[1])
+    area_b = (b[2] - b[0]) * (b[3] - b[1])
     union_area = area_a + area_b - intersection_area
 
     if union_area <= 0:

@@ -21,7 +21,7 @@ import cv2
 from datetime import datetime, timezone
 import io
 from pathlib import Path
-from typing import List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 import numpy as np
 
 from app.assets.manager import asset_manager
@@ -34,6 +34,7 @@ from app.pipeline.depth import (
     compute_entity_depth_stats,
 )
 from app.pipeline.detector import YoloPersonDetector
+from app.pipeline.device import device_manager
 from app.pipeline.interfaces import (
     DepthEstimationResult,
     DetectionResult,
@@ -864,7 +865,7 @@ class PipelineCoordinator:
             pose_results_by_entity: Dict[str, PoseEstimationResult] = {}
             try:
                 pose_model_path = model_manager.get_model_path("yolov8n-pose")
-                if pose_model_path.exists() and not isinstance(self.detector, MockPersonDetector):
+                if pose_model_path.exists() and not isinstance(self.get_detector(), MockPersonDetector):
                     pose_estimator: IPoseEstimator = YoloPoseEstimator(model_path=pose_model_path, device=device_manager.device)
                 else:
                     pose_estimator = MockPoseEstimator()
