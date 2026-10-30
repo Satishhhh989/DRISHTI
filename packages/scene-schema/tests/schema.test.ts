@@ -127,5 +127,47 @@ describe("Scene Schema Validation", () => {
     expect(result.isValid).toBe(false);
     expect(result.errors.some(e => e.code === "DUPLICATE_ID")).toBe(true);
   });
+
+  it("validates scene with depth metadata and spatial photo representation", () => {
+    const scene = createInitialScene({
+      id: "scene-spatial",
+      sourceImage: {
+        assetId: "asset-1",
+        filename: "test.jpg",
+        width: 1000,
+        height: 800,
+        aspectRatio: 1.25,
+        mimeType: "image/jpeg",
+        sizeBytes: 50000,
+        uploadedAt: new Date().toISOString()
+      }
+    });
+
+    scene.depth = {
+      status: "ready",
+      depthAssetId: "depth-01",
+      depthUri: "/api/v1/assets/depth-01/file",
+      visualizationAssetId: "vis-01",
+      visualizationUri: "/api/v1/assets/vis-01/file",
+      model: "depth-anything-v2-small",
+      modelFamily: "Depth-Anything-V2",
+      depthConvention: "relative_proximity",
+      width: 1000,
+      height: 800,
+      device: "mps"
+    };
+
+    scene.representations.spatial_photo = {
+      status: "ready",
+      assetId: "depth-01",
+      uri: "/api/v1/assets/vis-01/file",
+      updatedAt: new Date().toISOString()
+    };
+
+    const result = validateScene(scene);
+    expect(result.isValid).toBe(true);
+    expect(result.value?.depth?.status).toBe("ready");
+    expect(result.value?.representations.spatial_photo.status).toBe("ready");
+  });
 });
 

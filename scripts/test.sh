@@ -30,5 +30,5 @@ pnpm test:e2e
 
 echo ""
 echo "=================================================="
-echo "All 32 tests passed successfully!"
+echo "All DRISHTI automated tests passed successfully!"
 echo "=================================================="

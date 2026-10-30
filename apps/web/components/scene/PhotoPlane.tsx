@@ -5,6 +5,7 @@ import * as THREE from "three";
 import { useSceneStore } from "@/stores/scene-store";
 import { DetectionBox } from "./DetectionBox";
 import { SegmentationMaskLayer } from "./SegmentationMaskLayer";
+import { SpatialPhotoSurface } from "./SpatialPhotoSurface";
 
 interface PhotoPlaneProps {
   photoUrl: string;
@@ -21,11 +22,15 @@ const PALETTE = [
 ];
 
 export const PhotoPlane: React.FC<PhotoPlaneProps> = ({ photoUrl, aspectRatio }) => {
-  const [texture, setTexture] = useState<THREE.Texture | null>(null);
+  const [photoTexture, setPhotoTexture] = useState<THREE.Texture | null>(null);
+  const [depthVisTexture, setDepthVisTexture] = useState<THREE.Texture | null>(null);
 
   const currentScene = useSceneStore((state) => state.currentScene);
   const visualizationMode = useSceneStore((state) => state.visualizationMode);
+  const depthStrength = useSceneStore((state) => state.depthStrength);
+  const depthVisualizationUrl = useSceneStore((state) => state.depthVisualizationUrl);
 
+  // 1. Load original photo texture
   useEffect(() => {
     let active = true;
     const loader = new THREE.TextureLoader();
@@ -40,7 +45,7 @@ export const PhotoPlane: React.FC<PhotoPlaneProps> = ({ photoUrl, aspectRatio })
         loadedTex.colorSpace = THREE.SRGBColorSpace;
         loadedTex.minFilter = THREE.LinearFilter;
         loadedTex.generateMipmaps = false;
-        setTexture(loadedTex);
+        setPhotoTexture(loadedTex);
       },
       undefined,
       (err) => {
@@ -50,11 +55,49 @@ export const PhotoPlane: React.FC<PhotoPlaneProps> = ({ photoUrl, aspectRatio })
 
     return () => {
       active = false;
-      if (texture) {
-        texture.dispose();
-      }
     };
   }, [photoUrl]);
+
+  // 2. Load depth visualization texture if available
+  useEffect(() => {
+    if (!depthVisualizationUrl) {
+      setDepthVisTexture(null);
+      return;
+    }
+
+    let active = true;
+    const loader = new THREE.TextureLoader();
+
+    loader.load(
+      depthVisualizationUrl,
+      (loadedTex) => {
+        if (!active) {
+          loadedTex.dispose();
+          return;
+        }
+        loadedTex.minFilter = THREE.LinearFilter;
+        loadedTex.magFilter = THREE.LinearFilter;
+        loadedTex.generateMipmaps = false;
+        setDepthVisTexture(loadedTex);
+      },
+      undefined,
+      (err) => {
+        console.error("Failed to load depth visualization texture:", err);
+      }
+    );
+
+    return () => {
+      active = false;
+    };
+  }, [depthVisualizationUrl]);
+
+  // Clean up textures on unmount
+  useEffect(() => {
+    return () => {
+      if (photoTexture) photoTexture.dispose();
+      if (depthVisTexture) depthVisTexture.dispose();
+    };
+  }, [photoTexture, depthVisTexture]);
 
   // Plane dimensions: height = 2.0 meters, width = 2.0 * aspectRatio
   const height = 2.0;
@@ -63,7 +106,7 @@ export const PhotoPlane: React.FC<PhotoPlaneProps> = ({ photoUrl, aspectRatio })
   // Center plane so the bottom rests gently above the ground plane (Y = height / 2)
   const positionY = height / 2;
 
-  if (!texture) {
+  if (!photoTexture) {
     return null;
   }
 
@@ -71,23 +114,43 @@ export const PhotoPlane: React.FC<PhotoPlaneProps> = ({ photoUrl, aspectRatio })
 
   return (
     <group position={[0, positionY, 0]}>
-      {/* Primary photographic image plane */}
-      <mesh receiveShadow castShadow>
-        <planeGeometry args={[width, height]} />
-        <meshBasicMaterial
-          map={texture}
-          side={THREE.DoubleSide}
-          transparent={true}
+      {/* 1. Spatial Photo Mode: Depth-aware displaced 3D mesh */}
+      {visualizationMode === "spatial_photo" && depthVisualizationUrl ? (
+        <SpatialPhotoSurface
+          photoUrl={photoUrl}
+          depthUrl={depthVisualizationUrl}
+          planeWidth={width}
+          planeHeight={height}
+          depthStrength={depthStrength}
         />
-      </mesh>
+      ) : (
+        /* 2. Flat 3D Plane Mode: Used for Original, Detection, Segmentation, or Depth Map */
+        <>
+          <mesh receiveShadow castShadow>
+            <planeGeometry args={[width, height]} />
+            <meshBasicMaterial
+              map={
+                visualizationMode === "depth" && depthVisTexture
+                  ? depthVisTexture
+                  : photoTexture
+              }
+              side={THREE.DoubleSide}
+              transparent={true}
+            />
+          </mesh>
 
-      {/* Subtle border outline for the image plane in 3D space */}
-      <lineSegments>
-        <edgesGeometry args={[new THREE.PlaneGeometry(width, height)]} />
-        <lineBasicMaterial color="#3f3f46" linewidth={1} />
-      </lineSegments>
+          {/* Border outline */}
+          <lineSegments>
+            <edgesGeometry args={[new THREE.PlaneGeometry(width, height)]} />
+            <lineBasicMaterial
+              color={visualizationMode === "depth" ? "#a1a1aa" : "#3f3f46"}
+              linewidth={1}
+            />
+          </lineSegments>
+        </>
+      )}
 
-      {/* Segmentation Mask Overlays */}
+      {/* Segmentation Mask Overlays (Only in segmentation mode) */}
       {visualizationMode === "segmentation" &&
         entities.map((entity, idx) => {
           const color = PALETTE[idx % PALETTE.length];
@@ -102,7 +165,7 @@ export const PhotoPlane: React.FC<PhotoPlaneProps> = ({ photoUrl, aspectRatio })
           );
         })}
 
-      {/* Detection Bounding Boxes */}
+      {/* Detection Bounding Boxes (In detection or segmentation mode) */}
       {(visualizationMode === "detection" || visualizationMode === "segmentation") &&
         entities.map((entity, idx) => {
           const color = PALETTE[idx % PALETTE.length];

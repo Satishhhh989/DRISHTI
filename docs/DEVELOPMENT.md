@@ -22,8 +22,11 @@ bash scripts/setup.sh
 ```
 
 ### Model Checkpoints
-Phase 02 uses **YOLOv8 Nano Segmentation** (`yolov8n-seg.pt`, ~6.7MB).
-Check model status or download the checkpoint locally:
+DRISHTI relies on local neural network models stored in `data/models/`:
+1. **YOLOv8 Nano Segmentation** (`yolov8n-seg.pt`, ~6.7MB): Fast person detection and binary instance segmentation.
+2. **Depth Anything V2 Small** (`depth-anything-v2-small/`, ~99.2MB Safetensors): High-resolution monocular relative depth estimation.
+
+Check model status or trigger local download via the API:
 
 ```bash
 # Check status via API
@@ -33,7 +36,7 @@ curl http://127.0.0.1:8000/api/v1/pipeline/models
 curl -X POST http://127.0.0.1:8000/api/v1/pipeline/models/download
 ```
 
-Weights are stored in `data/models/yolov8n-seg.pt` and are preserved offline.
+Weights are stored in `data/models/` and are preserved offline.
 
 ### Launch Development Environment
 To launch both the backend API and frontend workspace concurrently:

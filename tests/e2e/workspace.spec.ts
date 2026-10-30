@@ -5,7 +5,7 @@ test.describe("Phase 01 & 02: Workspace & Viewport E2E Verification", () => {
     await page.goto("/");
     await expect(page.locator('[data-testid="workspace-root"]')).toBeVisible();
     await expect(page.getByText("PHOTO → 3D ENGINE")).toBeVisible();
-    await expect(page.getByText("Phase 01")).toBeVisible();
+    await expect(page.getByText(/Phase 0[1-3]/)).toBeVisible();
   });
 
   test("2. The upload control is visible in top bar and empty viewport", async ({ page }) => {
@@ -85,6 +85,23 @@ test.describe("Phase 01 & 02: Workspace & Viewport E2E Verification", () => {
     await expect(contextualPanel).toBeVisible();
     await expect(contextualPanel).toContainText("Scene Summary");
     await expect(contextualPanel).toContainText("Detected People");
+    await expect(contextualPanel).toContainText("Spatial Photography");
     await expect(page.locator('[data-testid="zero-person-notice"]')).toBeVisible();
+  });
+
+  test("7. Phase 03 Depth Map and Spatial Photo modes are functional", async ({ page }) => {
+    await page.goto("/");
+
+    const depthTab = page.locator('[data-testid="mode-depth"]');
+    const spatialTab = page.locator('[data-testid="mode-spatial-photo"]');
+
+    await expect(depthTab).toBeVisible();
+    await expect(spatialTab).toBeVisible();
+
+    await depthTab.click();
+    await expect(depthTab).toHaveAttribute("aria-pressed", "true");
+
+    await spatialTab.click();
+    await expect(spatialTab).toHaveAttribute("aria-pressed", "true");
   });
 });

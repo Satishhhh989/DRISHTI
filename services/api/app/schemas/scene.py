@@ -60,6 +60,23 @@ class SegmentationInfo(BaseModel):
     error: Optional[str] = None
 
 
+class EntityDepthInfo(BaseModel):
+    status: Literal["unstarted", "processing", "ready", "failed"] = "unstarted"
+    median_proximity: float = Field(
+        ...,
+        ge=0.0,
+        le=1.0,
+        description="Canonical relative proximity in [0, 1] where 1.0 is nearest foreground and 0.0 is farthest background",
+    )
+    min_proximity: Optional[float] = Field(default=None, ge=0.0, le=1.0)
+    max_proximity: Optional[float] = Field(default=None, ge=0.0, le=1.0)
+    depth_variation: Optional[float] = None
+    valid_pixel_coverage: float = Field(default=1.0, ge=0.0, le=1.0)
+    method: Literal["segmentation_mask", "bounding_box"] = "segmentation_mask"
+    depth_asset_id: Optional[str] = None
+    error: Optional[str] = None
+
+
 class SceneEntity(BaseModel):
     id: str = Field(..., min_length=1, description="Unique entity identifier")
     entity_type: EntityType = Field(default="person")
@@ -76,6 +93,40 @@ class SceneEntity(BaseModel):
     confidence: Optional[ConfidenceMetadata] = None
     detection: Optional[DetectionInfo] = None
     segmentation: Optional[SegmentationInfo] = None
+    depth: Optional[EntityDepthInfo] = None
+
+
+class DepthNormalizationMetadata(BaseModel):
+    method: str = "percentile_clamped"
+    p_min: float
+    p_max: float
+    raw_min: float
+    raw_max: float
+    model_convention: str = "distance_smaller_is_closer"
+    canonical_convention: str = "relative_proximity"
+
+
+class SceneDepthMetadata(BaseModel):
+    status: Literal["unavailable", "pending", "processing", "ready", "failed"] = "unavailable"
+    depth_asset_id: Optional[str] = None
+    depth_uri: Optional[str] = None
+    visualization_asset_id: Optional[str] = None
+    visualization_uri: Optional[str] = None
+    model: str = "depth-anything-v2-small"
+    model_family: str = "Depth-Anything-V2"
+    depth_convention: str = "relative_proximity"
+    normalization: Optional[DepthNormalizationMetadata] = None
+    width: int = Field(default=0, ge=0)
+    height: int = Field(default=0, ge=0)
+    device: str = "cpu"
+    analyzed_at: Optional[str] = None
+    error: Optional[str] = None
+
+
+class SpatialPhotoConfig(BaseModel):
+    default_depth_strength: float = 0.08
+    geometry_subdivisions: List[int] = Field(default_factory=lambda: [128, 128])
+    disocclusion_handling: str = "conservative_bounds"
 
 
 class RepresentationAsset(BaseModel):
@@ -86,6 +137,7 @@ class RepresentationAsset(BaseModel):
     updated_at: str = Field(
         default_factory=lambda: datetime.now(timezone.utc).isoformat()
     )
+    config: Optional[SpatialPhotoConfig] = None
 
 
 class SceneRepresentations(BaseModel):
@@ -93,7 +145,10 @@ class SceneRepresentations(BaseModel):
         default_factory=lambda: RepresentationAsset(status="ready")
     )
     spatial_photo: RepresentationAsset = Field(
-        default_factory=lambda: RepresentationAsset(status="unavailable")
+        default_factory=lambda: RepresentationAsset(
+            status="unavailable",
+            config=SpatialPhotoConfig(),
+        )
     )
     wireframe: RepresentationAsset = Field(
         default_factory=lambda: RepresentationAsset(status="unavailable")
@@ -131,6 +186,7 @@ class Scene(BaseModel):
     coordinate_system: CoordinateSystemInfo = Field(default_factory=CoordinateSystemInfo)
     entities: List[SceneEntity] = Field(default_factory=list)
     representations: SceneRepresentations = Field(default_factory=SceneRepresentations)
+    depth: Optional[SceneDepthMetadata] = None
     processing_status: SceneProcessingStatus = "unprocessed"
     active_job_id: Optional[str] = None
 

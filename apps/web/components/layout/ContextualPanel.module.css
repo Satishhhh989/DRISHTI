@@ -158,3 +158,23 @@
   opacity: 0.5;
   cursor: not-allowed;
 }
+
+.sliderRow {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 6px 0;
+}
+
+.sliderHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  color: #a1a1aa;
+}
+
+.sliderInput {
+  width: 100%;
+  accent-color: #06b6d4;
+  cursor: pointer;
+}

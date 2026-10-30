@@ -35,6 +35,20 @@ describe("Visualization and Representation Mode Switching", () => {
       fireEvent.click(originalBtn);
     });
     expect(originalBtn).toHaveAttribute("aria-pressed", "true");
+
+    // Click Depth Map
+    const depthBtn = screen.getByTestId("mode-depth");
+    await act(async () => {
+      fireEvent.click(depthBtn);
+    });
+    expect(depthBtn).toHaveAttribute("aria-pressed", "true");
+
+    // Click Spatial Photo
+    const spatialBtn = screen.getByTestId("mode-spatial-photo");
+    await act(async () => {
+      fireEvent.click(spatialBtn);
+    });
+    expect(spatialBtn).toHaveAttribute("aria-pressed", "true");
   });
 
   it("displays honest placeholder when selecting Wireframe mode", async () => {

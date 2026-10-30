@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from "react";
+import React from "react";
 import { useSceneStore } from "@/stores/scene-store";
 import { useUIStore } from "@/stores/ui-store";
 import { apiClient } from "@/lib/api-client";
@@ -12,12 +12,16 @@ export const ContextualPanel: React.FC = () => {
   const currentScene = useSceneStore((state) => state.currentScene);
   const photoDimensions = useSceneStore((state) => state.photoDimensions);
   const isAnalyzing = useSceneStore((state) => state.isAnalyzing);
+  const visualizationMode = useSceneStore((state) => state.visualizationMode);
+  const depthStrength = useSceneStore((state) => state.depthStrength);
+  const setDepthStrength = useSceneStore((state) => state.setDepthStrength);
   const setScene = useSceneStore((state) => state.setScene);
   const setAnalysisState = useSceneStore((state) => state.setAnalysisState);
 
   const isInspectorOpen = useUIStore((state) => state.isInspectorOpen);
   const selectedEntityId = useUIStore((state) => state.selectedEntityId);
   const selectEntity = useUIStore((state) => state.selectEntity);
+  const resetCamera = useUIStore((state) => state.resetCamera);
   const setError = useUIStore((state) => state.setError);
   const setStatusNotice = useUIStore((state) => state.setStatusNotice);
 
@@ -30,13 +34,12 @@ export const ContextualPanel: React.FC = () => {
     if (!currentScene) return;
 
     try {
-      setAnalysisState(true, "Queuing person detection & segmentation...", 0.1);
+      setAnalysisState(true, "Queuing person detection & spatial depth estimation...", 0.1);
       setError(null);
 
       const job = await apiClient.triggerAnalysis(currentScene.id);
-      setStatusNotice("Analyzing multi-person photograph with neural network...");
+      setStatusNotice("Analyzing photograph (Detection, Segmentation, Depth)...");
 
-      // Poll for job completion & catch-up events
       let completed = false;
       let lastSeq = 0;
 
@@ -52,7 +55,7 @@ export const ContextualPanel: React.FC = () => {
               }
               if (ev.event_type === "job_completed") {
                 completed = true;
-              } else if (ev.event_type === "stage_failed") {
+              } else if (ev.event_type === "stage_failed" && ev.stage_identifier === "image_analysis") {
                 throw new Error(ev.error?.message || "Analysis failed in pipeline stage.");
               }
             }
@@ -66,7 +69,7 @@ export const ContextualPanel: React.FC = () => {
       const refreshed = await apiClient.getScene(currentScene.id);
       setScene(refreshed);
       setAnalysisState(false, null, 1.0);
-      setStatusNotice(`Analysis complete: ${refreshed.entities.length} people identified.`);
+      setStatusNotice(`Analysis complete: ${refreshed.entities.length} people identified, spatial depth ready.`);
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : "Analysis failed";
       setError(msg);
@@ -100,6 +103,65 @@ export const ContextualPanel: React.FC = () => {
           </>
         ) : (
           <div className={styles.emptyNotice}>No active scene loaded.</div>
+        )}
+      </section>
+
+      {/* Spatial Photography & Depth Controls */}
+      <section className={styles.section} data-testid="spatial-photo-controls">
+        <div className={styles.sectionHeader}>Spatial Photography</div>
+        {currentScene?.depth?.status === "ready" ? (
+          <>
+            <div className={styles.propRow}>
+              <span className={styles.propLabel}>Depth Model</span>
+              <span className={styles.propValue}>{currentScene.depth.model}</span>
+            </div>
+            <div className={styles.propRow}>
+              <span className={styles.propLabel}>Convention</span>
+              <span className={styles.propValue}>Relative Proximity</span>
+            </div>
+            <div className={styles.propRow}>
+              <span className={styles.propLabel}>Device</span>
+              <span className={styles.propValue}>{currentScene.depth.device.toUpperCase()}</span>
+            </div>
+
+            {/* Depth Strength Slider */}
+            <div className={styles.sliderRow}>
+              <div className={styles.sliderHeader}>
+                <span className={styles.propLabel}>Depth Strength</span>
+                <span className={styles.propValue}>{(depthStrength * 100).toFixed(0)}%</span>
+              </div>
+              <input
+                type="range"
+                className={styles.sliderInput}
+                min="0.0"
+                max="0.25"
+                step="0.01"
+                value={depthStrength}
+                onChange={(e) => setDepthStrength(parseFloat(e.target.value))}
+                data-testid="depth-strength-slider"
+              />
+            </div>
+
+            {/* Camera Reset */}
+            <button
+              type="button"
+              className={styles.actionButton}
+              onClick={resetCamera}
+              data-testid="reset-camera-spatial-btn"
+            >
+              Reset Camera to Center
+            </button>
+          </>
+        ) : currentScene?.depth?.status === "failed" ? (
+          <div className={styles.emptyNotice}>
+            Depth estimation failed: {currentScene.depth.error}
+          </div>
+        ) : (
+          <div className={styles.emptyNotice}>
+            {currentScene
+              ? "Run analysis to generate depth-aware spatial photograph."
+              : "Upload a photograph to enable depth estimation."}
+          </div>
         )}
       </section>
 
@@ -196,7 +258,7 @@ export const ContextualPanel: React.FC = () => {
                   <circle cx="11" cy="11" r="8" />
                   <line x1="21" y1="21" x2="16.65" y2="16.65" />
                 </svg>
-                <span>{entities.length > 0 ? "Re-Analyze People" : "Detect & Segment People"}</span>
+                <span>{entities.length > 0 ? "Re-Analyze Scene" : "Analyze Scene & Depth"}</span>
               </>
             )}
           </button>
@@ -230,12 +292,33 @@ export const ContextualPanel: React.FC = () => {
                     [{(selectedEntity.detection.pixelBox || (selectedEntity.detection as unknown as Record<string, number[]>).pixel_box || []).map((n) => Math.round(n)).join(", ")}]
                   </span>
                 </div>
+              </>
+            )}
+
+            {/* Depth Statistics for Selected Person */}
+            {selectedEntity.depth && (
+              <>
                 <div className={styles.propRow}>
-                  <span className={styles.propLabel}>Detector</span>
-                  <span className={styles.propValue}>{selectedEntity.detection.model}</span>
+                  <span className={styles.propLabel}>Relative Proximity</span>
+                  <span className={styles.propValue}>
+                    {(selectedEntity.depth.medianProximity * 100).toFixed(1)}%
+                  </span>
+                </div>
+                <div className={styles.propRow}>
+                  <span className={styles.propLabel}>Depth Method</span>
+                  <span className={styles.propValue} style={{ fontSize: "10px" }}>
+                    {selectedEntity.depth.method === "segmentation_mask" ? "Mask" : "Bounding Box"}
+                  </span>
+                </div>
+                <div className={styles.propRow}>
+                  <span className={styles.propLabel}>Pixel Coverage</span>
+                  <span className={styles.propValue}>
+                    {(selectedEntity.depth.validPixelCoverage * 100).toFixed(1)}%
+                  </span>
                 </div>
               </>
             )}
+
             {selectedEntity.segmentation && (
               <>
                 <div className={styles.propRow}>
@@ -252,14 +335,6 @@ export const ContextualPanel: React.FC = () => {
                     </span>
                   </div>
                 )}
-                {(selectedEntity.segmentation.maskAssetId || (selectedEntity.segmentation as unknown as Record<string, string>).mask_asset_id) && (
-                  <div className={styles.propRow}>
-                    <span className={styles.propLabel}>Mask Asset</span>
-                    <span className={styles.propValue}>
-                      {((selectedEntity.segmentation.maskAssetId ?? (selectedEntity.segmentation as unknown as Record<string, string>).mask_asset_id) || "").slice(0, 8)}...
-                    </span>
-                  </div>
-                )}
               </>
             )}
             <div className={styles.propRow}>
@@ -269,7 +344,7 @@ export const ContextualPanel: React.FC = () => {
           </div>
         ) : (
           <div className={styles.emptyNotice}>
-            Click a person's bounding box in the viewport or select them from the list to view detailed metrics.
+            Click a person in the viewport or select them from the list to view spatial and segmentation metrics.
           </div>
         )}
       </section>

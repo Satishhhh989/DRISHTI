@@ -29,7 +29,14 @@ data/storage/*
 data/models/*.pt
 data/models/*.bin
 data/models/*.onnx
+data/models/*.safetensors
+data/models/**/*.pt
+data/models/**/*.bin
+data/models/**/*.onnx
+data/models/**/*.safetensors
+data/models/**/*.json
 !data/models/.gitkeep
+!data/models/**/.gitkeep
 *.log
 local-storage/
 *.tsbuildinfo

@@ -91,6 +91,11 @@ class DeviceManager:
     def is_accelerated(self) -> bool:
         return self.device in ("mps", "cuda")
 
+    def get_torch_device(self) -> "torch.device":
+        if not TORCH_AVAILABLE:
+            return None  # type: ignore[return-value]
+        return torch.device(self.device)
+
     def get_device_info(self) -> Dict[str, Any]:
         info: Dict[str, Any] = {
             "device": self.device,

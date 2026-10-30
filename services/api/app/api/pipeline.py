@@ -10,7 +10,7 @@ from app.jobs.tracker import job_tracker
 from app.pipeline.coordinator import pipeline_coordinator, PipelineCoordinator
 from app.pipeline.detector import YoloPersonDetector
 from app.pipeline.device import device_manager
-from app.pipeline.mock import MockPersonDetector, MockPersonSegmentor
+from app.pipeline.mock import MockDepthEstimator, MockPersonDetector, MockPersonSegmentor
 from app.pipeline.models import model_manager
 from app.pipeline.segmentor import YoloPersonSegmentor
 from app.scene.manager import scene_manager
@@ -23,6 +23,7 @@ class AnalyzeRequest(BaseModel):
     confidence_threshold: float = Field(default=0.35, ge=0.05, le=0.95)
     use_mock: bool = False
     simulate_zero_people: bool = False
+    include_depth: bool = True
 
 
 class AnalyzeResponse(BaseModel):
@@ -82,6 +83,7 @@ async def analyze_scene(
         coord = PipelineCoordinator(
             detector=MockPersonDetector(simulated_people_count=count),
             segmentor=MockPersonSegmentor(),
+            depth_estimator=MockDepthEstimator(),
         )
     else:
         coord = pipeline_coordinator
@@ -89,12 +91,13 @@ async def analyze_scene(
     # Run in background task to not block the request
     async def run_pipeline():
         try:
-            await coord.execute_phase02_pipeline(
+            await coord.execute_pipeline(
                 scene_id=scene.id,
                 job_id=job_id,
                 confidence_threshold=request.confidence_threshold,
+                include_depth=request.include_depth,
             )
-        except Exception as e:
+        except Exception:
             # Errors are already recorded in event emitter and scene status
             pass
 
@@ -104,5 +107,5 @@ async def analyze_scene(
         job_id=job_id,
         scene_id=scene.id,
         status="running",
-        message="Image intelligence pipeline started.",
+        message="Image intelligence & spatial photography pipeline started.",
     )

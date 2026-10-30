@@ -79,12 +79,41 @@ class ISegmentor(ABC):
         pass
 
 
+import numpy as np
+
+
+class DepthEstimationResult:
+    """Standardized depth estimation output."""
+
+    def __init__(
+        self,
+        raw_depth: np.ndarray,
+        normalized_depth: np.ndarray,
+        visualization_png_bytes: bytes,
+        width: int,
+        height: int,
+        model_name: str,
+        device: str,
+        normalization_metadata: dict,
+        convention: str = "relative_proximity",
+    ):
+        self.raw_depth = raw_depth
+        self.normalized_depth = normalized_depth
+        self.visualization_png_bytes = visualization_png_bytes
+        self.width = width
+        self.height = height
+        self.model_name = model_name
+        self.device = device
+        self.normalization_metadata = normalization_metadata
+        self.convention = convention
+
+
 class IDepthEstimator(ABC):
-    """Interface for monocular scene depth estimation (Phase 04)."""
+    """Interface for monocular scene depth estimation (Phase 03)."""
 
     @abstractmethod
-    async def estimate_depth(self, photo_asset: AssetMetadata) -> AssetMetadata:
-        """Estimates scene depth map asset."""
+    def estimate_depth(self, image_path: Path) -> DepthEstimationResult:
+        """Estimates scene depth and returns raw and normalized depth representations."""
         pass
 
 

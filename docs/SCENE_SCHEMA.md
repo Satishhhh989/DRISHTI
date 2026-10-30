@@ -33,7 +33,8 @@ interface Scene {
   sourceImage: SourceImageMetadata;   // Original photo properties & detection summary
   coordinateSystem: CoordinateSystemInfo; // Coordinate convention
   entities: SceneEntity[];            // List of detected/reconstructed entities
-  representations: SceneRepresentations; // Status of scene representations
+  representations: SceneRepresentations; // Status of scene representations (photo, spatialPhoto, wireframe, solid3d)
+  depth?: SceneDepthMetadata;         // Phase 03: Scene-wide depth map metadata
   processingStatus: "unprocessed" | "processing" | "ready" | "error";
   activeJobId?: string | null;        // Active processing job ID if running
 }
@@ -84,6 +85,9 @@ interface SceneEntity {
   // Phase 02 Extensions
   detectionInfo?: DetectionInfo;      // Detailed detection model results
   segmentationInfo?: SegmentationInfo;// Instance segmentation mask metadata
+  
+  // Phase 03 Extensions
+  depthInfo?: EntityDepthInfo;        // Per-person depth statistics and proximity
 }
 ```
 
@@ -112,26 +116,99 @@ interface SegmentationInfo {
 }
 ```
 
+### 4.3 Entity Depth Info (Phase 03)
+
+```typescript
+interface EntityDepthInfo {
+  medianProximity: number;            // Median relative proximity [0.0 - 1.0] (1.0 = closest)
+  minProximity: number;               // Minimum proximity within mask
+  maxProximity: number;               // Maximum proximity within mask
+  depthVariation: number;             // Standard deviation across entity pixels
+  pixelCoverage: number;              // Number of depth pixels sampled
+  method: "mask" | "bounding_box";    // Sampling method utilized
+}
+```
+
 ---
 
-## 5. Viewport Representations & Visualization Modes
+## 5. Depth Metadata & Spatial Photo Specification (Phase 03)
+
+### 5.1 Scene Depth Metadata
+
+```typescript
+interface SceneDepthMetadata {
+  status: "unstarted" | "computed" | "failed";
+  modelName: string;                  // e.g. "depth-anything-v2-small"
+  depthAssetId?: string;              // Machine-readable float32 .npy asset ID
+  depthMapUri?: string;               // URI to .npy raw depth file
+  visualizationAssetId?: string;      // Grayscale 8-bit PNG asset ID
+  visualizationUri?: string;          // URI to grayscale PNG visualization
+  width?: number;                     // Depth map width (matches source photo)
+  height?: number;                    // Depth map height (matches source photo)
+  normalization?: DepthNormalizationMetadata;
+  spatialPhoto?: SpatialPhotoConfig;  // Spatial photo rendering parameters
+  error?: string;                     // Non-fatal error message if estimation failed
+}
+```
+
+### 5.2 Depth Normalization & Canonical Proximity Convention
+
+DRISHTI adopts an explicit **Canonical Relative Proximity** convention:
+- $P \in [0.0, 1.0]$: Dimensionless relative scalar value.
+- $1.0 = \text{nearest foreground}$ (maximum forward vertex displacement).
+- $0.0 = \text{farthest background}$ (zero displacement, anchors to plane).
+- Clamped with robust 2nd and 98th percentiles ($p_2, p_{98}$) to eliminate extreme prediction outliers and sensor spikes.
+
+```typescript
+interface DepthNormalizationMetadata {
+  method: "percentile_clamping";
+  p2: number;                         // 2nd percentile raw value
+  p98: number;                        // 98th percentile raw value
+  inverted: boolean;                  // True (inverted so larger = closer)
+  nearPlane: number;                  // 0.0
+  farPlane: number;                   // 1.0
+  proximityConvention: "1.0_is_nearest_foreground";
+}
+```
+
+### 5.3 Spatial Photo Configuration
+
+```typescript
+interface SpatialPhotoConfig {
+  meshResolution: [number, number];   // Subdivisions, e.g. [128, 128]
+  displacementScale: number;          // Default vertex displacement multiplier (e.g. 0.08)
+  aspectRatio: number;                // Width / Height ratio locked to photo
+  cameraParallax: {
+    maxAzimuthDeg: number;            // Maximum horizontal orbit (+/- 18 deg)
+    maxPolarDeg: number;              // Maximum vertical elevation (75 to 105 deg)
+    damping: number;                  // Smooth orbit damping factor (0.06)
+  };
+}
+```
+
+---
+
+## 6. Viewport Representations & Visualization Modes
 
 DRISHTI provides multiple visualization layers in the viewport:
 
-1. **`original`**: Clean photograph rendered on the 3D plane.
+1. **`original`**: Clean photograph rendered on the upright 3D plane.
 2. **`detection`**: 3D bounding box outlines with name/confidence badge chips.
 3. **`segmentation`**: Color-tinted semi-transparent alpha overlays for person silhouettes.
-4. **`wireframe`**: Reconstructed 3D polygon geometry (honest placeholder for Phase 06).
-5. **`solid3d`**: Solid reconstructed 3D human meshes (honest placeholder for Phase 06/07).
+4. **`depth`**: Normalized 8-bit grayscale depth visualization ($255 = \text{closest}$, $0 = \text{farthest}$).
+5. **`spatial_photo`**: Interactive 3D mesh surface with vertex displacement and bounded parallax camera.
+6. **`wireframe`**: Reconstructed 3D polygon geometry (honest placeholder for Phase 06).
+7. **`solid3d`**: Solid reconstructed 3D human meshes (honest placeholder for Phase 06/07).
 
 Scene representations tracked in `SceneRepresentations`:
 - `photo`: `ready` when an image is loaded.
+- `spatialPhoto`: `ready` when depth estimation has successfully computed.
 - `wireframe`: `unavailable` (Phase 06).
 - `solid3d`: `unavailable` (Phase 06/07).
 
 ---
 
-## 6. Validation Rules
+## 7. Validation Rules
 
 Enforced in both TypeScript (`packages/scene-schema`) and Python (`services/api/app/schemas/scene.py`):
 
@@ -141,3 +218,4 @@ Enforced in both TypeScript (`packages/scene-schema`) and Python (`services/api/
 4. **Unique Entity IDs**: Entity IDs within a scene must be unique.
 5. **Image Dimensions**: Source image width and height must be strictly positive integers ($32 \le \text{dim} \le 8192$).
 6. **Pixel Boxes**: Integer pixel boxes must satisfy $0 \le x_1 < x_2 \le \text{width}$ and $0 \le y_1 < y_2 \le \text{height}$.
+7. **Canonical Depth Proximity**: Normalized depth values and per-entity median proximity must remain strictly bounded within $[0.0, 1.0]$. Extreme values outside this range are rejected or clamped during normalization.

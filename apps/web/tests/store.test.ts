@@ -48,6 +48,29 @@ describe("Frontend Stores", () => {
 
     store.setVisualizationMode("solid3d");
     expect(useSceneStore.getState().activeRepresentation).toBe("solid3d");
+
+    store.setVisualizationMode("depth");
+    expect(useSceneStore.getState().visualizationMode).toBe("depth");
+
+    store.setVisualizationMode("spatial_photo");
+    expect(useSceneStore.getState().visualizationMode).toBe("spatial_photo");
+  });
+
+  it("manages depth strength and visualization url", () => {
+    const store = useSceneStore.getState();
+    expect(store.depthStrength).toBe(0.08);
+
+    store.setDepthStrength(0.15);
+    expect(useSceneStore.getState().depthStrength).toBe(0.15);
+
+    // Clamps to [0, 0.25]
+    store.setDepthStrength(0.5);
+    expect(useSceneStore.getState().depthStrength).toBe(0.25);
+
+    store.setDepthVisualizationUrl("http://127.0.0.1:8000/api/v1/assets/depth-123/file");
+    expect(useSceneStore.getState().depthVisualizationUrl).toBe(
+      "http://127.0.0.1:8000/api/v1/assets/depth-123/file"
+    );
   });
 
   it("updates analysis progress state", () => {

@@ -14,7 +14,7 @@ from app.core.logging import logger
 
 DEFAULT_MODELS_DIR = Path("./data/models").resolve()
 
-# Pretrained model catalog for Phase 02
+# Pretrained model catalog for Phase 02 and Phase 03
 MODEL_CATALOG: Dict[str, Dict[str, Any]] = {
     "yolov8n-seg": {
         "filename": "yolov8n-seg.pt",
@@ -33,6 +33,16 @@ MODEL_CATALOG: Dict[str, Dict[str, Any]] = {
         "size_mb": 22.8,
         "license": "AGPL-3.0",
         "task": "segment",
+    },
+    "depth-anything-v2-small": {
+        "dir_name": "depth-anything-v2-small",
+        "filename": "depth-anything-v2-small/model.safetensors",
+        "category": "depth_estimation",
+        "description": "Depth Anything V2 Small (Monocular relative scene depth)",
+        "hf_model_id": "depth-anything/Depth-Anything-V2-Small-hf",
+        "size_mb": 99.2,
+        "license": "Apache-2.0",
+        "task": "depth-estimation",
     },
 }
 
@@ -88,6 +98,23 @@ class ModelManager:
         if dest_path.exists() and dest_path.stat().st_size > 1000:
             logger.info(f"Model '{model_key}' already cached at {dest_path}")
             return dest_path
+
+        if "hf_model_id" in meta:
+            hf_id = meta["hf_model_id"]
+            target_dir = self.models_dir / meta["dir_name"]
+            logger.info(f"Downloading Hugging Face model '{model_key}' from {hf_id} to {target_dir}...")
+            try:
+                from transformers import AutoImageProcessor, AutoModelForDepthEstimation
+                target_dir.mkdir(parents=True, exist_ok=True)
+                processor = AutoImageProcessor.from_pretrained(hf_id)
+                model = AutoModelForDepthEstimation.from_pretrained(hf_id)
+                processor.save_pretrained(target_dir)
+                model.save_pretrained(target_dir)
+                logger.info(f"Model '{model_key}' saved successfully to {target_dir}")
+                return dest_path
+            except Exception as e:
+                logger.error(f"Failed to download Hugging Face model '{model_key}': {e}")
+                raise
 
         url = meta["download_url"]
         logger.info(f"Downloading model '{model_key}' ({meta['size_mb']} MB) from {url} to {dest_path}...")

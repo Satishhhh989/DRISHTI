@@ -80,3 +80,62 @@ def test_bounding_box_validation():
         BoundingBox2D(x_min=0.8, y_min=0.1, x_max=0.3, y_max=0.9)
     assert "must be strictly less than x_max" in str(exc_info.value)
 
+
+def test_scene_with_depth_metadata():
+    source_meta = SourceImageMetadata(
+        asset_id="asset-photo-02",
+        filename="people.jpg",
+        width=1280,
+        height=720,
+        aspect_ratio=1.777778,
+        mime_type="image/jpeg",
+        size_bytes=500000,
+    )
+
+    from app.schemas.scene import SceneDepthMetadata, DepthNormalizationMetadata, SpatialPhotoConfig
+
+    depth_meta = SceneDepthMetadata(
+        status="ready",
+        depth_asset_id="asset-depth-01",
+        depth_uri="/api/v1/assets/asset-depth-01/file",
+        visualization_asset_id="asset-vis-01",
+        visualization_uri="/api/v1/assets/asset-vis-01/file",
+        model="depth-anything-v2-small",
+        model_family="Depth-Anything-V2",
+        depth_convention="relative_proximity",
+        normalization=DepthNormalizationMetadata(
+            p_min=1.2,
+            p_max=4.5,
+            raw_min=1.0,
+            raw_max=5.0,
+            model_convention="distance_smaller_is_closer",
+            canonical_convention="relative_proximity",
+        ),
+        width=1280,
+        height=720,
+        device="mps",
+    )
+
+    spatial_rep = RepresentationAsset(
+        status="ready",
+        asset_id="asset-depth-01",
+        uri="/api/v1/assets/asset-vis-01/file",
+        config=SpatialPhotoConfig(default_depth_strength=0.08),
+    )
+
+    scene = Scene(
+        id="scene-depth-01",
+        name="Depth Scene",
+        source_image=source_meta,
+        depth=depth_meta,
+        representations=SceneRepresentations(
+            spatial_photo=spatial_rep,
+        ),
+    )
+
+    assert scene.depth is not None
+    assert scene.depth.status == "ready"
+    assert scene.depth.normalization.canonical_convention == "relative_proximity"
+    assert scene.representations.spatial_photo.status == "ready"
+    assert scene.representations.spatial_photo.config.default_depth_strength == 0.08
+

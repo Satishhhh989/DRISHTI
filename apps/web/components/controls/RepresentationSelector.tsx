@@ -16,6 +16,8 @@ const MODES: ModeOption[] = [
   { id: "original", label: "Original", testId: "mode-photo" },
   { id: "detection", label: "Detection", testId: "mode-detection" },
   { id: "segmentation", label: "Segmentation", testId: "mode-segmentation" },
+  { id: "depth", label: "Depth Map", testId: "mode-depth" },
+  { id: "spatial_photo", label: "Spatial Photo", testId: "mode-spatial-photo" },
   { id: "wireframe", label: "Wireframe", badge: "P06", testId: "mode-wireframe" },
   { id: "solid3d", label: "3D Solid", badge: "P06", testId: "mode-solid3d" },
 ];

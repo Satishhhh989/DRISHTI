@@ -23,6 +23,7 @@ CATEGORY_DIRS: Dict[AssetCategory, str] = {
     "original_photo": "photos",
     "segmentation_mask": "masks",
     "depth_map": "depth",
+    "depth_visualization": "depth",
     "mesh": "meshes",
     "texture": "textures",
     "skeleton": "skeletons",

@@ -31,12 +31,14 @@ describe("Workspace Page", () => {
 
     // Branding in top bar
     expect(screen.getByText("PHOTO → 3D ENGINE")).toBeInTheDocument();
-    expect(screen.getByText("Phase 01")).toBeInTheDocument();
+    expect(screen.getByText(/Phase 0[1-3]/)).toBeInTheDocument();
 
     // Mode options
     expect(screen.getByTestId("mode-photo")).toBeInTheDocument();
     expect(screen.getByTestId("mode-detection")).toBeInTheDocument();
     expect(screen.getByTestId("mode-segmentation")).toBeInTheDocument();
+    expect(screen.getByTestId("mode-depth")).toBeInTheDocument();
+    expect(screen.getByTestId("mode-spatial-photo")).toBeInTheDocument();
     expect(screen.getByTestId("mode-wireframe")).toBeInTheDocument();
     expect(screen.getByTestId("mode-solid3d")).toBeInTheDocument();
 

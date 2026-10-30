@@ -48,8 +48,8 @@ export const UploadButton: React.FC<UploadButtonProps> = ({
 
           // 3. Automatically trigger Phase 02 person detection & segmentation
           try {
-            setAnalysisState(true, "Detecting and segmenting people...", 0.1);
-            setStatusNotice("Running local neural network person detection...");
+            setAnalysisState(true, "Analyzing photograph and generating spatial photo...", 0.1);
+            setStatusNotice("Running local neural networks (detection, segmentation, depth)...");
             const job = await apiClient.triggerAnalysis(res.scene.id);
 
             let completed = false;

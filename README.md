@@ -2,26 +2,27 @@
 
 A local-first AI-powered spatial reconstruction engine that transforms ordinary multi-person photographs into interactive, animated 3D scenes.
 
-Current Status: **Phase 02: Image Intelligence & Person Segmentation (Completed)**
+Current Status: **Phase 03: Depth Estimation & Spatial Photography (Completed)**
 
 ---
 
-## Capabilities (Phase 02)
+## Capabilities (Phase 03)
 
 - **Local-First AI Architecture**: Runs entirely offline on the user's machine without any external cloud vision APIs or telemetry.
-- **Hardware Acceleration**: Automatic capability discovery for Apple Silicon Metal Performance Shaders (`mps`), NVIDIA GPU (`cuda`), and optimized CPU fallback.
+- **Hardware Acceleration**: Automatic capability discovery and execution on Apple Silicon Metal Performance Shaders (`mps`), NVIDIA GPU (`cuda`), and optimized CPU fallback.
 - **Multi-Person Detection**: Detects all people in uploaded photographs using YOLOv8, calculating normalized coordinates, exact pixel boxes, confidence metrics, and stable entity IDs (`person-001`, `person-002`, ...).
 - **Instance Segmentation**: Produces individual single-channel 8-bit binary PNG masks ($255$ foreground, $0$ background) bilinearly resized to the photo's original resolution.
-- **Interactive 3D Viewport**:
-  - **Original Mode**: Clean photograph rendered on an upright aspect-ratio-locked 3D plane.
-  - **Detection Mode**: 3D wireframe bounding box outlines with floating name/confidence badges.
-  - **Segmentation Mode**: Semi-transparent colored alpha overlays mapped onto person silhouettes.
+- **Monocular Depth Estimation**: Local Depth Anything V2 Small neural network producing dense depth fields across the entire photograph without cloud round-trips.
+- **Canonical Relative Proximity**: Standardized proximity convention $P \in [0.0, 1.0]$ where $1.0 = \text{closest foreground}$ and $0.0 = \text{farthest background}$, normalized with robust 2nd and 98th percentile clamping.
+- **Interactive 3D Spatial Photography**:
+  - **Spatial Photo Mode**: High-resolution $128 \times 128$ vertex-displaced 3D mesh surface with smooth parallax navigation.
+  - **Bounded Parallax Camera**: Realistic camera orbit limits (azimuth $\pm 18^\circ$, polar $75^\circ \text{--} 105^\circ$, damping $0.06$) preventing disocclusion tears and extreme distortion.
+  - **Depth Map Mode**: Normalized 8-bit grayscale inspection view.
+  - **Original, Detection, and Segmentation Modes**: Instant switching between raw photo, 3D bounding boxes, and colored alpha masks.
   - **Wireframe & 3D Solid Modes**: Honest placeholder states communicating Phase 06 availability.
-  - **3D Spatial Lock**: Bounding boxes and masks remain pixel-perfect during camera orbit, pan, and zoom.
-- **Contextual Inspector**: Click any person in the 3D viewport or select from the sidebar to inspect confidence scores, exact pixel coordinates, and mask pixel areas.
-- **9-Stage Streaming Event Pipeline**: Asynchronous background pipeline emitting monotonic sequenced events (`image_validation`, `image_preparation`, `person_detection`, `detection_validation`, `instance_segmentation`, `mask_validation`, `asset_persistence`, `scene_update`, `completed`) with catch-up reconciliation.
-- **Decompression Bomb & Input Protection**: Strict image validation enforcing PIL limits (50M pixels max), corrupt file detection, non-animated format verification, and EXIF orientation normalization.
-- **Local Asset Storage**: Segregated storage in `data/storage/` (`photos/`, `masks/`) with strict path traversal prevention.
+- **Contextual Inspector**: Interactive drawer providing depth metadata, depth displacement strength slider ($0.00 \text{--} 0.25$), camera reset action, and per-person median/min/max proximity stats.
+- **12-Stage Streaming Event Pipeline**: Asynchronous background pipeline emitting monotonic sequenced events with catch-up reconciliation and non-fatal error isolation.
+- **Local Asset Storage**: Lossless float32 machine-readable `.npy` depth maps, grayscale visualization PNGs, instance masks, and sanitized photos in `data/storage/`.
 - **Automated Verification**: Comprehensive test coverage across backend (`pytest`), frontend (`vitest`), schemas (`vitest`), and browser automation (`playwright`).
 
 ---
@@ -61,8 +62,8 @@ DRISHTI/
 │   └── shared-types/          # TypeScript processing event contracts and API DTOs
 │
 ├── data/
-│   ├── models/                # Local neural network checkpoints (yolov8n-seg.pt)
-│   └── storage/               # Local user photos and segmentation masks
+│   ├── models/                # Local neural network checkpoints (yolov8n-seg.pt, depth-anything-v2-small/)
+│   └── storage/               # Local user photos, segmentation masks, and depth maps (.npy / .png)
 │
 ├── docs/                      # ARCHITECTURE, SCENE_SCHEMA, EVENT_PROTOCOL, DEVELOPMENT, ROADMAP
 ├── scripts/                   # dev.sh, test_backend.sh, setup.sh, run_api.sh

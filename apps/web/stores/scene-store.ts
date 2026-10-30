@@ -13,6 +13,8 @@ interface SceneState {
   visualizationMode: VisualizationMode;
   localPhotoUrl: string | null;
   photoDimensions: { width: number; height: number; aspect: number } | null;
+  depthStrength: number;
+  depthVisualizationUrl: string | null;
   isUploading: boolean;
   isAnalyzing: boolean;
   analysisProgress: number;
@@ -22,11 +24,15 @@ interface SceneState {
   setScene: (scene: Scene) => void;
   setActiveRepresentation: (mode: RepresentationMode) => void;
   setVisualizationMode: (mode: VisualizationMode) => void;
+  setDepthStrength: (strength: number) => void;
+  setDepthVisualizationUrl: (url: string | null) => void;
   setLocalPhoto: (url: string, width: number, height: number, filename: string) => void;
   setIsUploading: (uploading: boolean) => void;
   setAnalysisState: (analyzing: boolean, message?: string | null, progress?: number) => void;
   clearScene: () => void;
 }
+
+const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000";
 
 export const useSceneStore = create<SceneState>((set) => ({
   currentScene: null,
@@ -34,12 +40,22 @@ export const useSceneStore = create<SceneState>((set) => ({
   visualizationMode: "detection",
   localPhotoUrl: null,
   photoDimensions: null,
+  depthStrength: 0.08,
+  depthVisualizationUrl: null,
   isUploading: false,
   isAnalyzing: false,
   analysisProgress: 0,
   currentStageMessage: null,
 
-  setScene: (scene) =>
+  setScene: (scene) => {
+    let depthVisUrl: string | null = null;
+    const uri =
+      scene.depth?.visualizationUri ||
+      (scene.depth as unknown as Record<string, string>)?.visualization_uri;
+    if (uri) {
+      depthVisUrl = uri.startsWith("http") ? uri : `${API_BASE}${uri}`;
+    }
+
     set({
       currentScene: scene,
       photoDimensions: {
@@ -47,9 +63,16 @@ export const useSceneStore = create<SceneState>((set) => ({
         height: scene.sourceImage.height,
         aspect: scene.sourceImage.aspectRatio,
       },
-      // If entities exist with detections, default to detection or segmentation mode
-      visualizationMode: scene.entities.length > 0 ? "detection" : "original",
-    }),
+      depthVisualizationUrl: depthVisUrl,
+      // Default visualization: if spatial photo is ready, offer spatial photo or detection
+      visualizationMode:
+        scene.representations.spatial_photo?.status === "ready"
+          ? "spatial_photo"
+          : scene.entities.length > 0
+          ? "detection"
+          : "original",
+    });
+  },
 
   setActiveRepresentation: (mode) =>
     set({
@@ -69,6 +92,11 @@ export const useSceneStore = create<SceneState>((set) => ({
           ? "solid3d"
           : "photo",
     }),
+
+  setDepthStrength: (strength) =>
+    set({ depthStrength: Math.max(0.0, Math.min(0.25, strength)) }),
+
+  setDepthVisualizationUrl: (url) => set({ depthVisualizationUrl: url }),
 
   setLocalPhoto: (url, width, height, filename) => {
     const aspect = roundAspect(width, height);

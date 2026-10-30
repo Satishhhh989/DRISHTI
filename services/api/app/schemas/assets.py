@@ -9,6 +9,7 @@ AssetCategory = Literal[
     "original_photo",
     "segmentation_mask",
     "depth_map",
+    "depth_visualization",
     "mesh",
     "texture",
     "skeleton",

@@ -120,6 +120,7 @@ export interface SceneEntity {
   confidence?: ConfidenceMetadata;
   detection?: DetectionInfo;
   segmentation?: SegmentationInfo;
+  depth?: EntityDepthInfo;
 }
 
 export type RepresentationStatus = 
@@ -131,7 +132,59 @@ export type RepresentationStatus =
 
 export type RepresentationMode = "photo" | "wireframe" | "solid3d";
 
-export type VisualizationMode = "original" | "detection" | "segmentation" | "wireframe" | "solid3d";
+export type VisualizationMode =
+  | "original"
+  | "detection"
+  | "segmentation"
+  | "depth"
+  | "spatial_photo"
+  | "wireframe"
+  | "solid3d";
+
+export interface DepthNormalizationMetadata {
+  method: "percentile_clamped";
+  pMin: number;
+  pMax: number;
+  rawMin: number;
+  rawMax: number;
+  modelConvention: string;
+  canonicalConvention: "relative_proximity";
+}
+
+export interface SceneDepthMetadata {
+  status: "unavailable" | "pending" | "processing" | "ready" | "failed";
+  depthAssetId?: string | null;
+  depthUri?: string | null;
+  visualizationAssetId?: string | null;
+  visualizationUri?: string | null;
+  model: string;
+  modelFamily: string;
+  depthConvention: "relative_proximity";
+  normalization?: DepthNormalizationMetadata;
+  width: number;
+  height: number;
+  device: string;
+  analyzedAt?: string;
+  error?: string | null;
+}
+
+export interface SpatialPhotoConfig {
+  defaultDepthStrength: number;
+  geometrySubdivisions: [number, number];
+  disocclusionHandling: "conservative_bounds" | "edge_clamp";
+}
+
+export interface EntityDepthInfo {
+  status: "unstarted" | "processing" | "ready" | "failed";
+  medianProximity: number; // Normalized canonical proximity [0, 1] (higher = nearer)
+  minProximity?: number;
+  maxProximity?: number;
+  depthVariation?: number;
+  validPixelCoverage: number;
+  method: "segmentation_mask" | "bounding_box";
+  depthAssetId?: string | null;
+  error?: string | null;
+}
 
 export interface RepresentationAsset {
   status: RepresentationStatus;
@@ -139,6 +192,7 @@ export interface RepresentationAsset {
   uri?: string | null;
   error?: string | null;
   updatedAt: string;
+  config?: SpatialPhotoConfig;
 }
 
 export interface SceneRepresentations {
@@ -176,6 +230,7 @@ export interface Scene {
   coordinateSystem: CoordinateSystemInfo;
   entities: SceneEntity[];
   representations: SceneRepresentations;
+  depth?: SceneDepthMetadata;
   processingStatus: SceneProcessingStatus;
   activeJobId?: string | null;
 }

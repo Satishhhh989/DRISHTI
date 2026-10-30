@@ -18,8 +18,9 @@ export const TopBar: React.FC = () => {
     <header className={styles.topBar}>
       <div className={styles.identitySection}>
         <div className={styles.brand}>
-          <span className={styles.title}>PHOTO → 3D ENGINE</span>
-          <span className={styles.phaseTag}>Phase 01</span>
+          <span className={styles.title}>DRISHTI</span>
+          <span className={styles.brandSubtitle}>PHOTO → 3D ENGINE</span>
+          <span className={styles.phaseTag}>Phase 03</span>
         </div>
         <div className={styles.runtimeBadge}>
           <span
