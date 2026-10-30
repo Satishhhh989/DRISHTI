@@ -5,7 +5,7 @@ test.describe("Phase 01 & 02: Workspace & Viewport E2E Verification", () => {
     await page.goto("/");
     await expect(page.locator('[data-testid="workspace-root"]')).toBeVisible();
     await expect(page.getByText("PHOTO → 3D ENGINE")).toBeVisible();
-    await expect(page.getByText(/Phase 0[1-5]/)).toBeVisible();
+    await expect(page.getByText(/Phase 0[1-6]/)).toBeVisible();
   });
 
   test("2. The upload control is visible in top bar and empty viewport", async ({ page }) => {
@@ -115,6 +115,7 @@ test.describe("Phase 01 & 02: Workspace & Viewport E2E Verification", () => {
     await expect(page.locator('[data-testid="stage-row-depth"]')).toBeVisible();
     await expect(page.locator('[data-testid="stage-row-spatial"]')).toBeVisible();
     await expect(page.locator('[data-testid="stage-row-reconstruction"]')).toBeVisible();
+    await expect(page.locator('[data-testid="stage-row-assembly"]')).toBeVisible();
   });
 
   test("9. Phase 05 Human 3D Wireframe and Solid modes are functional", async ({ page }) => {
@@ -131,5 +132,16 @@ test.describe("Phase 01 & 02: Workspace & Viewport E2E Verification", () => {
 
     await solidTab.click();
     await expect(solidTab).toHaveAttribute("aria-pressed", "true");
+  });
+
+  test("10. Phase 06 Multi-Person Scene Assembly and controls are functional", async ({ page }) => {
+    await page.goto("/");
+
+    const fitSceneBtn = page.locator('[data-testid="fit-scene-btn"]');
+    await expect(fitSceneBtn).toBeVisible();
+
+    // Verify Scene Assembly row exists in pipeline inspector
+    await expect(page.locator('[data-testid="stage-row-assembly"]')).toBeVisible();
+    await expect(page.getByText("Scene Assembly")).toBeVisible();
   });
 });

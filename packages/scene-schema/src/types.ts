@@ -148,6 +148,46 @@ export interface HumanReconstructionData {
   reconstructedAt?: string;
 }
 
+export interface PlacementProvenance {
+  method: string;
+  imageSpaceCoords: [number, number]; // [normalized_x, normalized_y]
+  depthSource: string;
+  relativeProximity?: number | null;
+  modelNormalizationApplied: string;
+  orientationCorrection: [number, number, number]; // Euler [x, y, z] in radians
+  uncertaintyFlags: string[];
+  isMetric: boolean;
+  placedAt?: string;
+}
+
+export interface SceneGraphNode {
+  id: string;
+  name: string;
+  nodeType: "root" | "camera" | "light" | "reference_plane" | "ground_plane" | "person";
+  entityId?: string | null;
+  transform: Transform;
+  children: string[];
+  visible: boolean;
+  meshAssetId?: string | null;
+  meshUri?: string | null;
+  provenance?: PlacementProvenance | null;
+}
+
+export interface SceneGraph {
+  rootId: string;
+  nodes: Record<string, SceneGraphNode>;
+}
+
+export interface SceneAssemblyReport {
+  status: "completed" | "partial" | "failed";
+  assembledAt: string;
+  totalEntities: number;
+  reconstructedCount: number;
+  unreconstructedCount: number;
+  occlusionWarnings: string[];
+  placementMethod: string;
+}
+
 export interface SceneEntity {
   id: string;
   entityType: EntityType;
@@ -166,6 +206,8 @@ export interface SceneEntity {
   segmentation?: SegmentationInfo;
   depth?: EntityDepthInfo;
   reconstruction?: HumanReconstructionData;
+  placement?: PlacementProvenance;
+  sceneNodeId?: string;
 }
 
 export type RepresentationStatus = 
@@ -276,6 +318,8 @@ export interface Scene {
   entities: SceneEntity[];
   representations: SceneRepresentations;
   depth?: SceneDepthMetadata;
+  sceneGraph?: SceneGraph;
+  assemblyReport?: SceneAssemblyReport;
   processingStatus: SceneProcessingStatus;
   activeJobId?: string | null;
 }

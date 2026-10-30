@@ -23,11 +23,13 @@ export const ContextualPanel: React.FC = () => {
   const reconcileAuthoritativeScene = useSceneStore(
     (state) => state.reconcileAuthoritativeScene
   );
+  const toggleEntityVisibility = useSceneStore((state) => state.toggleEntityVisibility);
 
   const isInspectorOpen = useUIStore((state) => state.isInspectorOpen);
   const selectedEntityId = useUIStore((state) => state.selectedEntityId);
   const selectEntity = useUIStore((state) => state.selectEntity);
   const resetCamera = useUIStore((state) => state.resetCamera);
+  const focusEntity = useUIStore((state) => state.focusEntity);
   const setError = useUIStore((state) => state.setError);
   const setStatusNotice = useUIStore((state) => state.setStatusNotice);
 
@@ -214,6 +216,29 @@ export const ContextualPanel: React.FC = () => {
                 : stages.human_reconstruction?.status || "Pending"}
             </span>
           </div>
+
+          {/* Stage: Multi-Person Scene Assembly (Phase 06) */}
+          <div className={styles.stageRow} data-testid="stage-row-assembly">
+            <span className={styles.stageName}>Scene Assembly</span>
+            <span
+              className={`${styles.stageStatus} ${
+                styles[
+                  stages.scene_assembly?.status ||
+                  (currentScene?.sceneGraph ? "completed" : isAnalyzing ? "running" : "pending")
+                ]
+              }`}
+            >
+              {currentScene?.assemblyReport?.status === "completed"
+                ? "Completed"
+                : currentScene?.assemblyReport?.status === "partial"
+                ? "Partial Scene"
+                : stages.scene_assembly?.status === "running"
+                ? "Assembling..."
+                : currentScene?.sceneGraph
+                ? "Completed"
+                : stages.scene_assembly?.status || "Pending"}
+            </span>
+          </div>
         </div>
 
         {/* Cancellation Button */}
@@ -383,13 +408,34 @@ export const ContextualPanel: React.FC = () => {
                   }}
                 >
                   <div className={styles.personCardLeft}>
+                    <button
+                      type="button"
+                      className={`${styles.visibilityBtn} ${entity.visibility === false ? styles.hidden : ""}`}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        toggleEntityVisibility(entity.id);
+                      }}
+                      title={entity.visibility === false ? "Show entity in 3D scene" : "Hide entity in 3D scene"}
+                      data-testid={`toggle-visibility-${entity.id}`}
+                    >
+                      {entity.visibility === false ? "👁️‍🗨️" : "👁️"}
+                    </button>
                     <span
                       className={styles.colorDot}
                       style={{ backgroundColor: colorCss }}
                     />
                     <span className={styles.personName}>{entity.name || `Person ${idx + 1}`}</span>
                   </div>
-                  <span className={styles.confidenceBadge}>{conf}</span>
+                  <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+                    <span
+                      className={`${styles.tagBadge} ${
+                        entity.reconstruction?.status === "ready" ? styles.meshReady : styles.unrec
+                      }`}
+                    >
+                      {entity.reconstruction?.status === "ready" ? "Mesh" : "In-Scene"}
+                    </span>
+                    <span className={styles.confidenceBadge}>{conf}</span>
+                  </div>
                 </div>
               );
             })}
@@ -564,6 +610,60 @@ export const ContextualPanel: React.FC = () => {
                 <span className={styles.statusPill}>Not Reconstructed</span>
               </div>
             )}
+
+            {/* 3D Scene Placement (Phase 06) */}
+            <div style={{ marginTop: "10px", paddingTop: "8px", borderTop: "1px solid #27272e" }}>
+              <div className={styles.sectionHeader} style={{ marginBottom: "6px" }}>3D Scene Placement</div>
+              <div className={styles.propRow}>
+                <span className={styles.propLabel}>Placement Method</span>
+                <span className={styles.propValue} style={{ fontSize: "10px" }} data-testid="placement-method">
+                  {selectedEntity.placement?.method || "Depth-Projected Composition"}
+                </span>
+              </div>
+              {selectedEntity.transform && (
+                <div className={styles.propRow}>
+                  <span className={styles.propLabel}>3D Position</span>
+                  <span className={styles.propValue} style={{ fontSize: "10px" }} data-testid="placement-position">
+                    X: {(selectedEntity.transform.position.x ?? (selectedEntity.transform.position as unknown as number[])[0] ?? 0).toFixed(2)}m,{" "}
+                    Y: {(selectedEntity.transform.position.y ?? (selectedEntity.transform.position as unknown as number[])[1] ?? 0).toFixed(2)}m,{" "}
+                    Z: {(selectedEntity.transform.position.z ?? (selectedEntity.transform.position as unknown as number[])[2] ?? 0).toFixed(2)}m
+                  </span>
+                </div>
+              )}
+              <div className={styles.propRow}>
+                <span className={styles.propLabel}>Depth Source</span>
+                <span className={styles.propValue} style={{ fontSize: "10px" }}>
+                  {selectedEntity.placement?.depthSource || (selectedEntity.depth ? "Relative Proximity" : "Fallback Plane")}
+                </span>
+              </div>
+              <div className={styles.propRow}>
+                <span className={styles.propLabel}>Visibility</span>
+                <span
+                  className={styles.propValue}
+                  style={{ color: selectedEntity.visibility === false ? "#ef4444" : "#22c55e" }}
+                  data-testid="entity-visibility-status"
+                >
+                  {selectedEntity.visibility === false ? "Hidden" : "Visible"}
+                </span>
+              </div>
+              {selectedEntity.placement?.uncertaintyFlags && selectedEntity.placement.uncertaintyFlags.length > 0 && (
+                <div className={styles.propRow}>
+                  <span className={styles.propLabel}>Flags</span>
+                  <span className={styles.propValue} style={{ fontSize: "9px", color: "#f59e0b" }}>
+                    {selectedEntity.placement.uncertaintyFlags.join(", ")}
+                  </span>
+                </div>
+              )}
+              <button
+                type="button"
+                className={styles.actionButton}
+                onClick={focusEntity}
+                data-testid="focus-entity-btn"
+                style={{ marginTop: "6px", padding: "5px 8px", fontSize: "11px" }}
+              >
+                Focus Camera on Person
+              </button>
+            </div>
           </div>
         ) : (
           <div className={styles.emptyNotice}>

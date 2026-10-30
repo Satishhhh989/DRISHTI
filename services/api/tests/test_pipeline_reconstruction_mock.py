@@ -130,3 +130,4 @@ async def test_mocked_pipeline_partial_reconstruction_failure_isolation(test_sce
     # Representations still enabled because at least 1 person is reconstructed
     assert final_scene.representations.wireframe.status == "ready"
     assert final_scene.representations.solid3d.status == "ready"
+

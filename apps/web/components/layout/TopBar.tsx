@@ -12,6 +12,7 @@ export const TopBar: React.FC = () => {
   const isInspectorOpen = useUIStore((state) => state.isInspectorOpen);
   const toggleInspector = useUIStore((state) => state.toggleInspector);
   const resetCamera = useUIStore((state) => state.resetCamera);
+  const fitScene = useUIStore((state) => state.fitScene);
   const apiConnected = useUIStore((state) => state.apiConnected);
 
   return (
@@ -20,7 +21,7 @@ export const TopBar: React.FC = () => {
         <div className={styles.brand}>
           <span className={styles.title}>DRISHTI</span>
           <span className={styles.brandSubtitle}>PHOTO → 3D ENGINE</span>
-          <span className={styles.phaseTag}>Phase 05</span>
+          <span className={styles.phaseTag}>Phase 06</span>
         </div>
         <div className={styles.runtimeBadge}>
           <span
@@ -44,6 +45,16 @@ export const TopBar: React.FC = () => {
           data-testid="toggle-grid-btn"
         >
           Grid
+        </button>
+
+        <button
+          type="button"
+          className={styles.toolButton}
+          onClick={fitScene}
+          title="Fit Camera to All Assembled People"
+          data-testid="fit-scene-btn"
+        >
+          Fit Scene
         </button>
 
         <button

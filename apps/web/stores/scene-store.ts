@@ -49,6 +49,7 @@ interface SceneState {
     jobId?: string | null
   ) => void;
   cancelActiveJob: () => Promise<void>;
+  toggleEntityVisibility: (entityId: string) => void;
   clearScene: () => void;
 }
 
@@ -219,6 +220,20 @@ export const useSceneStore = create<SceneState>((set, get) => ({
         currentStageMessage: "Analysis cancelled by user.",
       });
     }
+  },
+
+  toggleEntityVisibility: (entityId) => {
+    const { currentScene } = get();
+    if (!currentScene) return;
+    const updatedEntities = currentScene.entities.map((e) =>
+      e.id === entityId ? { ...e, visibility: e.visibility === false ? true : false } : e
+    );
+    set({
+      currentScene: {
+        ...currentScene,
+        entities: updatedEntities,
+      },
+    });
   },
 
   clearScene: () =>

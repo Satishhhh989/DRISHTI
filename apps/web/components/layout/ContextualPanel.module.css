@@ -257,3 +257,44 @@
   line-height: 1.4;
 }
 
+.visibilityBtn {
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  color: #71717a;
+  padding: 2px 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: color 0.15s ease;
+}
+
+.visibilityBtn:hover {
+  color: #f4f4f5;
+}
+
+.visibilityBtn.hidden {
+  opacity: 0.4;
+}
+
+.tagBadge {
+  font-size: 9px;
+  padding: 1px 4px;
+  border-radius: 3px;
+  background: #27272a;
+  color: #a1a1aa;
+}
+
+.tagBadge.meshReady {
+  background: rgba(34, 197, 94, 0.15);
+  color: #4ade80;
+  border: 1px solid rgba(34, 197, 94, 0.3);
+}
+
+.tagBadge.unrec {
+  background: rgba(148, 163, 184, 0.15);
+  color: #94a3b8;
+  border: 1px solid rgba(148, 163, 184, 0.3);
+}
+
+

@@ -28,6 +28,7 @@ from app.assets.manager import asset_manager
 from app.core.logging import logger
 from app.events.emitter import event_emitter
 from app.jobs.tracker import job_tracker
+from app.pipeline.assembly import scene_assembly_engine
 from app.pipeline.depth import (
     DepthAnythingV2Estimator,
     compute_entity_depth_stats,
@@ -831,7 +832,60 @@ class PipelineCoordinator:
                 return scene
 
             # -------------------------------------------------------------
-            # Stage 12: SCENE_UPDATE
+            # Stage 12: SCENE_ASSEMBLY
+            # -------------------------------------------------------------
+            job_tracker.update_job_status(job_id, status="running", current_stage="scene_assembly")
+            event_emitter.emit(
+                job_id=job_id,
+                scene_id=scene_id,
+                event_type="stage_started",
+                stage_identifier="scene_assembly",
+                status="running",
+                progress=0.96,
+                message=f"Assembling 3D scene graph for {len(scene.entities)} entities...",
+            )
+
+            try:
+                assembly_result = scene_assembly_engine.assemble(scene)
+                scene.scene_graph = assembly_result.scene_graph
+                scene.assembly_report = assembly_result.report
+                scene.entities = assembly_result.entities
+                scene_manager.update_scene(scene)
+
+                event_emitter.emit(
+                    job_id=job_id,
+                    scene_id=scene_id,
+                    event_type="stage_completed",
+                    stage_identifier="scene_assembly",
+                    status="running",
+                    progress=0.98,
+                    message=(
+                        f"Scene assembled ({assembly_result.report.reconstructed_count} meshes placed, "
+                        f"status: {assembly_result.report.status})."
+                    ),
+                )
+            except Exception as asm_err:
+                logger.warning(f"Scene assembly non-fatal error: {asm_err}")
+                event_emitter.emit(
+                    job_id=job_id,
+                    scene_id=scene_id,
+                    event_type="stage_failed",
+                    stage_identifier="scene_assembly",
+                    status="running",
+                    error=StructuredError(
+                        code="SCENE_ASSEMBLY_ERROR",
+                        message=str(asm_err),
+                    ),
+                )
+
+            # Check cancellation
+            if job_tracker.is_cancelled(job_id):
+                scene.processing_status = "ready"
+                scene_manager.update_scene(scene)
+                return scene
+
+            # -------------------------------------------------------------
+            # Stage 13: SCENE_UPDATE
             # -------------------------------------------------------------
             job_tracker.update_job_status(job_id, status="running", current_stage="scene_update")
             event_emitter.emit(
@@ -840,7 +894,7 @@ class PipelineCoordinator:
                 event_type="stage_started",
                 stage_identifier="scene_update",
                 status="running",
-                progress=0.96,
+                progress=0.98,
                 message="Updating authoritative scene entities and representations...",
             )
 
@@ -854,12 +908,12 @@ class PipelineCoordinator:
                 event_type="stage_completed",
                 stage_identifier="scene_update",
                 status="running",
-                progress=0.98,
+                progress=0.99,
                 message=f"Scene updated ({len(entities)} people, depth: {scene.depth.status if scene.depth else 'skipped'}).",
             )
 
             # -------------------------------------------------------------
-            # Stage 12: COMPLETED
+            # Stage 14: COMPLETED
             # -------------------------------------------------------------
             job_tracker.update_job_status(job_id, status="completed", current_stage="completed")
             event_emitter.emit(
@@ -869,7 +923,7 @@ class PipelineCoordinator:
                 stage_identifier="completed",
                 status="completed",
                 progress=1.0,
-                message=f"Analysis complete: {len(entities)} people detected and spatial photo ready.",
+                message=f"Analysis complete: {len(entities)} people detected and assembled in 3D scene.",
             )
 
             logger.info(f"Pipeline job '{job_id}' completed successfully for scene '{scene_id}'")

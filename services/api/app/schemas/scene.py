@@ -3,7 +3,7 @@ Version 1.1.0 (Phase 02: Image Intelligence & Person Segmentation)
 """
 
 from datetime import datetime, timezone
-from typing import List, Literal, Optional
+from typing import Dict, List, Literal, Optional
 from pydantic import BaseModel, Field, field_validator
 from app.schemas.common import (
     BoundingBox2D,
@@ -17,6 +17,18 @@ EntityType = Literal["person", "background", "environment", "prop"]
 ReconstructionStatus = Literal["unstarted", "detecting", "reconstructing", "ready", "failed"]
 RepresentationStatus = Literal["unavailable", "pending", "processing", "ready", "failed"]
 SceneProcessingStatus = Literal["unprocessed", "processing", "ready", "error"]
+
+
+class PlacementProvenance(BaseModel):
+    method: str = "depth_projected_composition"
+    image_space_coords: List[float] = Field(default_factory=list, description="[normalized_x, normalized_y]")
+    depth_source: str = "relative_median_proximity"
+    relative_proximity: Optional[float] = None
+    model_normalization_applied: str = "canonical_humanoid_scale"
+    orientation_correction: List[float] = Field(default_factory=lambda: [0.0, 0.0, 0.0], description="Euler [x, y, z] in radians")
+    uncertainty_flags: List[str] = Field(default_factory=list)
+    is_metric: bool = False
+    placed_at: Optional[str] = None
 
 
 class ConfidenceMetadata(BaseModel):
@@ -137,6 +149,8 @@ class SceneEntity(BaseModel):
     segmentation: Optional[SegmentationInfo] = None
     depth: Optional[EntityDepthInfo] = None
     reconstruction: Optional[HumanReconstructionData] = None
+    placement: Optional[PlacementProvenance] = None
+    scene_node_id: Optional[str] = None
 
 
 class DepthNormalizationMetadata(BaseModel):
@@ -215,6 +229,36 @@ class SourceImageMetadata(BaseModel):
     )
 
 
+class SceneGraphNode(BaseModel):
+    id: str
+    name: str
+    node_type: Literal["root", "camera", "light", "reference_plane", "ground_plane", "person"]
+    entity_id: Optional[str] = None
+    transform: Transform = Field(default_factory=Transform)
+    children: List[str] = Field(default_factory=list)
+    visible: bool = True
+    mesh_asset_id: Optional[str] = None
+    mesh_uri: Optional[str] = None
+    provenance: Optional[PlacementProvenance] = None
+
+
+class SceneGraph(BaseModel):
+    root_id: str = "scene-root"
+    nodes: Dict[str, SceneGraphNode] = Field(default_factory=dict)
+
+
+class SceneAssemblyReport(BaseModel):
+    status: Literal["completed", "partial", "failed"] = "completed"
+    assembled_at: str = Field(
+        default_factory=lambda: datetime.now(timezone.utc).isoformat()
+    )
+    total_entities: int = 0
+    reconstructed_count: int = 0
+    unreconstructed_count: int = 0
+    occlusion_warnings: List[str] = Field(default_factory=list)
+    placement_method: str = "depth_projected_composition"
+
+
 class Scene(BaseModel):
     id: str = Field(..., min_length=1, description="Unique scene ID")
     schema_version: str = Field(default=SCHEMA_VERSION)
@@ -230,6 +274,8 @@ class Scene(BaseModel):
     entities: List[SceneEntity] = Field(default_factory=list)
     representations: SceneRepresentations = Field(default_factory=SceneRepresentations)
     depth: Optional[SceneDepthMetadata] = None
+    scene_graph: Optional[SceneGraph] = None
+    assembly_report: Optional[SceneAssemblyReport] = None
     processing_status: SceneProcessingStatus = "unprocessed"
     active_job_id: Optional[str] = None
 

@@ -130,18 +130,73 @@ const SingleHumanMesh: React.FC<HumanMeshProps> = ({
   );
 };
 
+interface UnreconstructedProps {
+  entity: SceneEntity;
+  isSelected: boolean;
+  onSelect: () => void;
+}
+
+const UnreconstructedEntityIndicator: React.FC<UnreconstructedProps> = ({
+  entity,
+  isSelected,
+  onSelect,
+}) => {
+  const rawPos = entity.transform?.position;
+  const position: [number, number, number] = Array.isArray(rawPos)
+    ? [rawPos[0], rawPos[1], rawPos[2]]
+    : rawPos
+    ? [rawPos.x, rawPos.y, rawPos.z]
+    : [0, 1, 0];
+
+  const color = isSelected ? "#f59e0b" : "#64748b";
+
+  return (
+    <group
+      position={position}
+      onClick={(e: { stopPropagation: () => void }) => {
+        e.stopPropagation();
+        onSelect();
+      }}
+      data-testid={`unreconstructed-indicator-${entity.id}`}
+    >
+      {/* Clean wireframe volume representing the unreconstructed person in scene space */}
+      <mesh position={[0, 0, 0]}>
+        <boxGeometry args={[0.5, 1.6, 0.35]} />
+        <meshBasicMaterial
+          color={color}
+          wireframe
+          transparent
+          opacity={isSelected ? 0.85 : 0.4}
+        />
+      </mesh>
+    </group>
+  );
+};
+
 export const HumanMeshLayer: React.FC<{ mode: "wireframe" | "solid3d" }> = ({ mode }) => {
   const entities = useSceneStore((state) => state.currentScene?.entities || []);
   const selectedEntityId = useUIStore((state) => state.selectedEntityId);
   const selectEntity = useUIStore((state) => state.selectEntity);
 
-  const reconstructedEntities = useMemo(() => {
-    return entities.filter(
-      (e) =>
+  const visibleEntities = useMemo(() => {
+    return entities.filter((e) => e.visibility !== false);
+  }, [entities]);
+
+  const { reconstructedEntities, unreconstructedEntities } = useMemo(() => {
+    const rec: SceneEntity[] = [];
+    const unrec: SceneEntity[] = [];
+    for (const e of visibleEntities) {
+      if (
         e.reconstruction?.status === "ready" &&
         Boolean(e.reconstruction?.meshUrl || e.reconstruction?.meshAssetId)
-    );
-  }, [entities]);
+      ) {
+        rec.push(e);
+      } else {
+        unrec.push(e);
+      }
+    }
+    return { reconstructedEntities: rec, unreconstructedEntities: unrec };
+  }, [visibleEntities]);
 
   const isWireframe = mode === "wireframe";
 
@@ -153,11 +208,22 @@ export const HumanMeshLayer: React.FC<{ mode: "wireframe" | "solid3d" }> = ({ mo
       <directionalLight position={[-3, 3, -4]} intensity={0.5} />
       <directionalLight position={[0, -4, 2]} intensity={0.3} />
 
+      {/* Reconstructed Volumetric 3D Meshes */}
       {reconstructedEntities.map((entity) => (
         <SingleHumanMesh
           key={entity.id}
           entity={entity}
           isWireframe={isWireframe}
+          isSelected={selectedEntityId === entity.id}
+          onSelect={() => selectEntity(entity.id)}
+        />
+      ))}
+
+      {/* Unreconstructed Entities Displayed Honestly In-Scene */}
+      {unreconstructedEntities.map((entity) => (
+        <UnreconstructedEntityIndicator
+          key={entity.id}
+          entity={entity}
           isSelected={selectedEntityId === entity.id}
           onSelect={() => selectEntity(entity.id)}
         />

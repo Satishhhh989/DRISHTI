@@ -138,3 +138,4 @@ def test_mock_human_reconstructor_geometry_specs():
     assert len(result.glb_bytes) > 1000
     assert result.dimensions[1] > 1.0  # Height > 1.0 meter
     assert result.quality_score > 0.8
+

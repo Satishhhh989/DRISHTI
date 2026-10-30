@@ -64,11 +64,11 @@ bash scripts/test.sh
 This executes:
 1. `packages/scene-schema`: Vitest schema validation, representation availability, and contract tests (10 tests).
 2. `packages/shared-types`: Vitest event contract and DTO tests (2 tests).
-3. `apps/web`: Vitest component, store, event reducer, 3D mesh rendering, and visualization tests (23 tests).
-4. `services/api`: Pytest backend test suite (unit tests, mock pipeline, real model MPS smoke tests, geometry validation, and progressive event stream tests) (59 tests).
-5. `tests/e2e`: Playwright browser-level end-to-end tests (9 tests).
+3. `apps/web`: Vitest component, store, event reducer, 3D mesh rendering, assembly inspector, and visualization tests (25 tests).
+4. `services/api`: Pytest backend test suite (unit tests, mock pipeline, real model MPS smoke tests, geometry validation, progressive event stream tests, scene assembly engine, and disk persistence tests) (69 tests).
+5. `tests/e2e`: Playwright browser-level end-to-end tests including Phase 06 scene assembly verification (10 tests).
 
-**Total Verified Tests: 103 passing.**
+**Total Verified Tests: 116 passing.**
 
 ### Running Individual Test Suites
 
@@ -78,10 +78,18 @@ bash scripts/test_backend.sh
 
 # Or directly in virtualenv
 source .venv/bin/activate
-pytest services/api/tests -v
+PYTHONPATH=services/api pytest services/api/tests -v
+
+# Scene Assembly & Persistence backend tests
+PYTHONPATH=services/api pytest services/api/tests/test_scene_assembly_engine.py -v
+PYTHONPATH=services/api pytest services/api/tests/test_scene_persistence.py -v
+PYTHONPATH=services/api pytest services/api/tests/test_pipeline_assembly.py -v
 
 # Frontend tests (vitest)
 pnpm --filter @photo-to-3d/web test
+
+# Assembly UI component tests
+pnpm --filter @photo-to-3d/web test apps/web/tests/assembly-view.test.tsx
 
 # Schema package tests
 pnpm --filter @photo-to-3d/scene-schema test
@@ -95,20 +103,24 @@ pnpm test:e2e
 
 ---
 
-## 4. Hardware, Pipeline & Streaming Endpoints
+## 4. Hardware, Pipeline, Scene & Streaming Endpoints
 
-DRISHTI exposes dedicated endpoints for inspecting hardware acceleration, pipeline status, and real-time streaming:
+DRISHTI exposes dedicated endpoints for inspecting hardware acceleration, pipeline status, scene persistence, and real-time streaming:
 
 | Method | Endpoint | Description |
 |---|---|---|
 | `GET` | `/api/v1/pipeline/hardware` | Returns detected compute device (`mps`, `cuda`, `cpu`), device name, and allocation test status. |
 | `GET` | `/api/v1/pipeline/models` | Lists local model files, sizes, and readiness. |
 | `POST` | `/api/v1/pipeline/models/download` | Explicitly downloads default model weights with verification. |
-| `POST` | `/api/v1/pipeline/analyze` | Initiates the 12-stage image intelligence and depth pipeline for an uploaded photograph. |
+| `POST` | `/api/v1/pipeline/analyze` | Initiates the 14-stage image intelligence, depth, 3D reconstruction, and scene assembly pipeline. |
 | `GET` | `/api/v1/jobs/{job_id}` | Polls status, current stage, and progress of an active job. |
 | `GET` | `/api/v1/jobs/{job_id}/events` | Retrieves ordered, sequenced events since a given sequence number (`?since=...`). |
 | `GET` | `/api/v1/jobs/{job_id}/stream` | Server-Sent Events (SSE) stream (`text/event-stream`) with automatic `Last-Event-ID` catchup. |
 | `POST` | `/api/v1/jobs/{job_id}/cancel` | Cooperatively cancels an active job without discarding already produced assets. |
+| `GET` | `/api/v1/scenes` | Lists all saved scenes found locally in `data/storage/scenes/`. |
+| `GET` | `/api/v1/scenes/{scene_id}` | Retrieves full persisted scene including entities, scene graph, and assembly report. |
+| `POST` | `/api/v1/scenes` | Creates and persists a new scene definition. |
+| `PUT` | `/api/v1/scenes/{scene_id}` | Updates and persists scene modifications to disk. |
 | `GET` | `/api/v1/assets/masks/{filename}` | Serves individual 8-bit binary PNG segmentation masks. |
 | `GET` | `/api/v1/assets/depth/{filename}` | Serves 8-bit grayscale depth visualization PNGs. |
 | `GET` | `/api/v1/assets/meshes/{filename}` | Serves binary GLTF (.glb) 3D human meshes. |

@@ -1,6 +1,6 @@
 # DRISHTI Processing Event Contract & Synchronization Protocol
 
-**Version:** 1.3.0 (Phase 05: AI Human 3D Reconstruction Engine)
+**Version:** 1.4.0 (Phase 06: Multi-Person Scene Assembly Engine)
 
 ## 1. Overview
 
@@ -29,36 +29,36 @@ The backend processing pipeline emits typed, strictly-sequenced events as operat
 | Event Type | Trigger Condition |
 |---|---|
 | `job_accepted` | A new background processing job has been registered and enqueued. |
-| `stage_started` | A pipeline stage (e.g. `person_detection`, `human_reconstruction`) has begun execution. |
+| `stage_started` | A pipeline stage (e.g. `person_detection`, `human_reconstruction`, `scene_assembly`) has begun execution. |
 | `progress_updated` | Incremental progress (0.0 to 1.0) reported within an active stage. |
 | `intermediate_result_available` | An intermediate asset or metadata item has been produced. |
 | `asset_ready` | A pipeline asset (e.g. mask, mesh, depth map) is stored and available. |
 | `stage_completed` | The current pipeline stage has completed successfully. |
-| `stage_failed` | An error occurred during the stage, aborting the process. |
+| `stage_failed` | An error occurred during the stage, aborting or non-fatally warning the process. |
 | `job_cancelled` | The job was cancelled by user intervention or timeout. |
 | `job_completed` | All pipeline stages have concluded and the scene is updated. |
 
 ---
 
-## 3. Phase 05 Pipeline Stages
+## 3. Phase 06 Pipeline Stages
 
-The Phase 05 pipeline executes 13 sequential stages:
+The Phase 06 pipeline executes 14 sequential stages:
 
 | Stage Identifier | Progress Weight | Description |
 |---|---|---|
-| `image_validation` | 6% | Validates file format, checks against decompression bombs, ensures integrity. |
-| `image_preparation` | 12% | Resolves local path, normalizes EXIF orientation, extracts dimensions. |
-| `person_detection` | 24% | Runs local YOLOv8 neural network inference to isolate person bounding boxes. |
-| `detection_validation` | 32% | Filters low-confidence detections, validates coordinates, assigns entity IDs. |
-| `instance_segmentation` | 42% | Generates individual instance masks and resizes to native photo resolution. |
+| `image_validation` | 5% | Validates file format, checks against decompression bombs, ensures integrity. |
+| `image_preparation` | 10% | Resolves local path, normalizes EXIF orientation, extracts dimensions. |
+| `person_detection` | 20% | Runs local YOLOv8 neural network inference to isolate person bounding boxes. |
+| `detection_validation` | 30% | Filters low-confidence detections, validates coordinates, assigns entity IDs. |
+| `instance_segmentation` | 40% | Generates individual instance masks and resizes to native photo resolution. |
 | `mask_validation` | 50% | Verifies binary mask boundaries, calculates pixel area and coverage statistics. |
-| `depth_estimation` | 62% | Executes Depth Anything V2 Small monocular depth estimation across the scene. |
+| `depth_estimation` | 60% | Executes Depth Anything V2 Small monocular depth estimation across the scene. |
 | `depth_normalization` | 70% | Robust 2nd/98th percentile clamping and inversion to canonical proximity $[0, 1]$. |
-| `depth_association` | 76% | Computes per-entity median/min/max proximity stats using segmentation masks. |
-| `spatial_photo_preparation` | 82% | Prepares 3D spatial mesh displacement properties and parallax camera boundaries. |
-| `human_reconstruction` | 92% | Reconstructs 3D volumetric human meshes via local SPIN + SMPL LBS forward layer. |
-| `asset_persistence` | 96% | Encodes and writes PNG masks, `.npy` raw depth arrays, depth PNGs, and GLB meshes. |
-| `scene_update` | 98% | Atomically updates the scene graph with entities, depth metadata, spatial representations, and mesh paths. |
+| `depth_association` | 75% | Computes per-entity median/min/max proximity stats using segmentation masks. |
+| `spatial_photo_preparation` | 80% | Prepares 3D spatial mesh displacement properties and parallax camera boundaries. |
+| `human_reconstruction` | 92%–96% | Reconstructs 3D volumetric human meshes via local SPIN + SMPL LBS forward layer. |
+| `scene_assembly` | 96%–98% | Assembles unified 3D scene graph, computes spatial transforms, bounds, and occlusion checks. |
+| `scene_update` | 99% | Atomically updates authoritative scene entities, graph, reports, and disk storage. |
 | `completed` | 100% | Emits final `job_completed` event and notifies clients. |
 
 ---
@@ -112,5 +112,8 @@ interface ProcessingEvent {
 21. **Seq #21 (`asset_ready`)**: 3D GLB mesh saved for `person-001` (6,890 vertices, 13,776 faces).
 22. **Seq #22 (`asset_ready`)**: 3D GLB mesh saved for `person-002` (6,890 vertices, 13,776 faces).
 23. **Seq #23 (`stage_completed`)**: 3D human reconstruction completed for 2 persons.
-24. **Seq #24 (`stage_completed`)**: Scene updated.
-25. **Seq #25 (`job_completed`)**: Pipeline complete.
+24. **Seq #24 (`stage_started`)**: `scene_assembly` assembling 3D scene graph for 2 entities.
+25. **Seq #25 (`stage_completed`)**: `scene_assembly` completed (2 meshes placed, status: assembled).
+26. **Seq #26 (`stage_started`)**: `scene_update` persisting entities, scene graph, and report to disk.
+27. **Seq #27 (`stage_completed`)**: Scene updated and persisted to `data/storage/scenes/{scene_id}.json`.
+28. **Seq #28 (`job_completed`)**: Pipeline complete.

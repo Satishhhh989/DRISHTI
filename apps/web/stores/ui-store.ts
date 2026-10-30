@@ -10,6 +10,8 @@ interface UIState {
   isInspectorOpen: boolean;
   showGrid: boolean;
   cameraResetTrigger: number;
+  fitSceneTrigger: number;
+  focusEntityTrigger: number;
   apiConnected: boolean;
   errorMessage: string | null;
   statusNotice: string | null;
@@ -20,6 +22,8 @@ interface UIState {
   setInspectorOpen: (open: boolean) => void;
   toggleGrid: () => void;
   resetCamera: () => void;
+  fitScene: () => void;
+  focusEntity: () => void;
   setApiConnected: (connected: boolean) => void;
   setError: (msg: string | null) => void;
   setStatusNotice: (notice: string | null) => void;
@@ -30,6 +34,8 @@ export const useUIStore = create<UIState>((set) => ({
   isInspectorOpen: true,
   showGrid: true,
   cameraResetTrigger: 0,
+  fitSceneTrigger: 0,
+  focusEntityTrigger: 0,
   apiConnected: false,
   errorMessage: null,
   statusNotice: null,
@@ -39,6 +45,8 @@ export const useUIStore = create<UIState>((set) => ({
   setInspectorOpen: (open) => set({ isInspectorOpen: open }),
   toggleGrid: () => set((state) => ({ showGrid: !state.showGrid })),
   resetCamera: () => set((state) => ({ cameraResetTrigger: state.cameraResetTrigger + 1 })),
+  fitScene: () => set((state) => ({ fitSceneTrigger: state.fitSceneTrigger + 1 })),
+  focusEntity: () => set((state) => ({ focusEntityTrigger: state.focusEntityTrigger + 1 })),
   setApiConnected: (connected) => set({ apiConnected: connected }),
   setError: (msg) => set({ errorMessage: msg }),
   setStatusNotice: (notice) => set({ statusNotice: notice }),

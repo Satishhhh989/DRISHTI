@@ -1,6 +1,6 @@
 # DRISHTI Scene Schema Specification
 
-**Version:** 1.0.0  
+**Version:** 1.1.0 (Phase 06: Multi-Person Scene Assembly)  
 **Format:** JSON / Typed Objects (TypeScript & Pydantic)
 
 ## 1. Coordinate System Convention
@@ -16,6 +16,11 @@ DRISHTI uses a **Right-Handed 3D Cartesian Coordinate System**, matching standar
 - **Base Unit:** Meters ($1.0 = 1\text{ meter}$).
 - **Ground Plane:** The horizontal ground plane is defined at $Y = 0$.
 - **Angles:** Rotations are expressed in radians, with default Euler order `XYZ`.
+- **Model Space vs. Scene Space:**
+  - **Canonical Model Space**: The reconstructed human mesh (e.g. SMPL template) is modeled in canonical model space centered at the pelvis origin $(0, 0, 0)$ with canonical scale ($\approx 1.7\text{m}$). The underlying geometry asset is stored intact.
+  - **Scene Space**: Each entity is positioned, rotated, and scaled in the shared scene graph:
+    $$\mathbf{T}_{\text{scene}} = \mathbf{T}_{\text{placement}} \times \mathbf{R}_{\text{orientation}} \times \mathbf{S}_{\text{normalization}}$$
+    This preserves the original mesh topology while placing each person deterministically according to image-space position, relative depth proximity, and scale.
 
 ---
 
@@ -37,6 +42,10 @@ interface Scene {
   depth?: SceneDepthMetadata;         // Phase 03: Scene-wide depth map metadata
   processingStatus: "unprocessed" | "processing" | "ready" | "error";
   activeJobId?: string | null;        // Active processing job ID if running
+
+  // Phase 06 Additions
+  sceneGraph?: SceneGraph;            // Hierarchical multi-person scene graph
+  assemblyReport?: SceneAssemblyReport; // Multi-person scene assembly summary
 }
 ```
 
@@ -62,7 +71,7 @@ interface SourceImageMetadata {
 
 ---
 
-## 4. Scene Entities & Phase 02 Additions
+## 4. Scene Entities & Phase 06 Additions
 
 Entities represent subjects isolated within the scene. In Phase 02, each detected person receives a stable entity ID (`person-001`, `person-002`, ...) along with `DetectionInfo` and `SegmentationInfo`:
 
@@ -73,8 +82,8 @@ interface SceneEntity {
   sourceImageId: string;              // Association with source photo
   name?: string;                      // Display name (e.g. "Person 1")
   boundingBox?: BoundingBox2D;        // Normalized 2D image coordinates [0, 1]
-  transform: Transform;               // 3D position, rotation, scale
-  geometryRef?: string | null;        // Asset ID of polygon mesh (Phase 06)
+  transform: Transform;               // 3D position, rotation, scale in scene space
+  geometryRef?: string | null;        // Asset ID of polygon mesh (Phase 05/06)
   materialRef?: string | null;        // Asset ID of texture/material (Phase 07)
   skeletonRef?: string | null;        // Asset ID of humanoid skeleton (Phase 08)
   animationState: AnimationState;     // Playback status and clip name (Phase 09)
@@ -91,6 +100,10 @@ interface SceneEntity {
   
   // Phase 05 Extensions
   humanReconstruction?: HumanReconstructionData; // 3D parametric human mesh reconstruction
+
+  // Phase 06 Extensions
+  placement?: PlacementProvenance;    // Provenance of 3D scene placement & depth
+  sceneNodeId?: string;               // Node ID in the scene graph
 }
 ```
 
@@ -237,7 +250,93 @@ interface SpatialPhotoConfig {
 
 ---
 
-## 6. Viewport Representations & Visualization Modes
+## 6. Multi-Person Scene Graph & Assembly Specification (Phase 06)
+
+Phase 06 introduces deterministic multi-person spatial assembly, transforming individually reconstructed people into a unified, coherent 3D scene.
+
+### 6.1 Placement Provenance (`PlacementProvenance`)
+
+Records the complete mathematical derivation and source attribution for an entity's 3D spatial placement:
+
+```typescript
+interface PlacementProvenance {
+  imageCenterNorm: [number, number];  // Normalized 2D center [cx, cy] in [0, 1]
+  imageBboxNorm: [number, number, number, number]; // [x_min, y_min, x_max, y_max]
+  depthSource: "entity_median_proximity" | "entity_min_proximity" | "scene_depth_fallback" | "spatial_photo_fallback" | "geometric_prior";
+  relativeProximity: number;          // Canonical proximity P in [0.0, 1.0]
+  spreadFactor: number;               // Depth spread multiplier (default: 2.5)
+  modelNormalizationApplied: boolean; // True if centered and scaled from model origin
+  orientationCorrection: [number, number, number]; // Euler angles [rx, ry, rz] in radians
+  uncertaintyFlags: string[];         // e.g. ["occlusion_ambiguity", "boundary_clipping"]
+  isMetric: boolean;                  // False for monocular reconstruction
+}
+```
+
+### 6.2 Scene Graph Nodes (`SceneGraphNode`) & Scene Graph (`SceneGraph`)
+
+The scene graph organizes entities in a hierarchical DAG rooted at a dedicated `root` node:
+
+```typescript
+interface SceneGraphNode {
+  id: string;                         // Node ID, e.g. "node-person-001"
+  name: string;                       // Display name, e.g. "Person 1"
+  nodeType: "root" | "person" | "camera" | "environment" | "prop";
+  entityId?: string | null;           // Associated scene entity ID
+  transform: Transform;               // Position [x,y,z], Rotation [rx,ry,rz], Scale [sx,sy,sz]
+  children: string[];                 // Child node IDs
+  visible: boolean;                   // Viewport visibility toggle
+  meshAssetId?: string | null;        // Binary GLTF mesh asset ID if reconstructed
+  meshUri?: string | null;            // URI to .glb asset
+  provenance?: PlacementProvenance | null; // Spatial calculation lineage
+}
+
+interface SceneGraph {
+  rootId: string;                     // ID of root node (default: "root")
+  nodes: Record<string, SceneGraphNode>; // Map of node ID to node instance
+}
+```
+
+### 6.3 Assembly Summary Report (`SceneAssemblyReport`)
+
+```typescript
+interface SceneAssemblyReport {
+  status: "assembled" | "partial" | "empty";
+  totalEntities: number;              // Total person entities in scene
+  reconstructedCount: number;         // Count with valid 3D polygon meshes
+  unreconstructedCount: number;       // Count with in-scene placeholder bounds
+  occlusionWarnings: string[];        // Entity IDs involved in occlusion ambiguities
+  placementMethod: string;            // e.g. "relative_depth_normalized_plane"
+}
+```
+
+### 6.4 Spatial Transformation Formulation
+
+The assembly engine maps 2D image coordinates and monocular depth into 3D world space:
+
+1. **Horizontal Alignment ($X$)**:
+   Preserves lateral ordering (person on left appears on left):
+   $$X = (c_x - 0.5) \times W_{\text{ref}}$$
+   where $c_x$ is the horizontal center of the bounding box, and $W_{\text{ref}}$ is the reference plane width derived from the photograph's aspect ratio.
+
+2. **Vertical Grounding ($Y$)**:
+   Grounds characters to the $Y = 0$ floor plane:
+   $$Y = \frac{H_{\text{entity}}}{2}$$
+   where $H_{\text{entity}}$ is the scaled vertical extent of the entity mesh.
+
+3. **Relative Depth Spreading ($Z$)**:
+   Translates canonical proximity $P \in [0.0, 1.0]$ into scene depth:
+   $$Z = -(P - P_{\text{mid}}) \times S_{\text{depth}}$$
+   where $+Z$ points towards the camera/viewer, ensuring subjects with higher proximity (closer to the camera in the photograph) are placed forward in the 3D scene.
+
+4. **Occlusion & Depth Ambiguity**:
+   When 2D bounding boxes overlap significantly ($\text{IoU} > 0.12$) while estimated relative proximity is very close ($|\Delta P| < 0.05$), the system flags `"occlusion_ambiguity"` in `uncertaintyFlags` without artificially destroying original spatial positions.
+
+5. **Partial Reconstruction Tolerance**:
+   When an entity fails reconstruction or is pending, it is retained in the scene graph as an unreconstructed node (`nodeType: "person"` with `meshAssetId: null`), rendered in the viewport as an in-scene spatial bounding indicator to preserve spatial context.
+
+---
+
+## 7. Viewport Representations & Visualization Modes
 
 DRISHTI provides multiple visualization layers in the viewport:
 
@@ -255,7 +354,7 @@ Scene representations tracked in `SceneRepresentations`:
 - `wireframe`: `ready` when one or more human entities have reconstructed 3D meshes.
 - `solid3d`: `ready` when one or more human entities have reconstructed 3D meshes.
 
-### 6.1 Representation Availability Model (`computeRepresentationAvailability`)
+### 7.1 Representation Availability Model (`computeRepresentationAvailability`)
 
 Availability of each viewport visualization mode is dynamically calculated using `computeRepresentationAvailability(scene, stage, isAnalyzing)` based on actual asset existence:
 - **`original`**: `ready` if source image asset is loaded.
@@ -268,7 +367,7 @@ Availability of each viewport visualization mode is dynamically calculated using
 
 ---
 
-## 7. Validation Rules
+## 8. Validation Rules
 
 Enforced in both TypeScript (`packages/scene-schema`) and Python (`services/api/app/schemas/scene.py`):
 
@@ -279,3 +378,4 @@ Enforced in both TypeScript (`packages/scene-schema`) and Python (`services/api/
 5. **Image Dimensions**: Source image width and height must be strictly positive integers ($32 \le \text{dim} \le 8192$).
 6. **Pixel Boxes**: Integer pixel boxes must satisfy $0 \le x_1 < x_2 \le \text{width}$ and $0 \le y_1 < y_2 \le \text{height}$.
 7. **Canonical Depth Proximity**: Normalized depth values and per-entity median proximity must remain strictly bounded within $[0.0, 1.0]$. Extreme values outside this range are rejected or clamped during normalization.
+8. **Scene Graph Consistency**: Every node referenced in `children` or `scene_node_id` must exist in `scene_graph.nodes`. The root node must exist and have `id == root_id`. Transform values must be finite numbers and scales strictly positive.

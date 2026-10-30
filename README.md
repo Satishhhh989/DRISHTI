@@ -2,14 +2,26 @@
 
 A local-first AI-powered spatial reconstruction engine that transforms ordinary multi-person photographs into interactive, animated 3D scenes.
 
-Current Status: **Phase 05: AI Human 3D Reconstruction Engine (Completed)**
+Current Status: **Phase 06: Multi-Person Scene Assembly (Completed)**
 
 ---
 
-## Capabilities (Phase 05)
+## Capabilities (Phase 06)
 
 - **Local-First AI Architecture**: Runs entirely offline on the user's machine without any external cloud vision APIs or telemetry.
 - **Hardware Acceleration**: Automatic capability discovery and execution on Apple Silicon Metal Performance Shaders (`mps`), NVIDIA GPU (`cuda`), and optimized CPU fallback.
+- **Multi-Person 3D Scene Assembly Engine (Phase 06)**:
+  - **Deterministic Scene Graph Assembly**: Transforms individually reconstructed human meshes into a unified, coherent 3D spatial scene graph with hierarchical parent-child relationships and typed nodes.
+  - **Model Space vs. Scene Space Separation**: Preserves canonical SMPL geometry (origin at pelvis) and evaluates explicit scene transforms:
+    $$\mathbf{T}_{\text{scene}} = \mathbf{T}_{\text{placement}} \times \mathbf{R}_{\text{orientation}} \times \mathbf{S}_{\text{normalization}}$$
+  - **Horizontal Composition Preservation ($X$)**: Maps bounding box image centers to 3D space, ensuring lateral ordering (Person A left, Person B center, Person C right) is preserved exactly.
+  - **Vertical Ground Plane Contact ($Y$)**: Mathematically grounds characters to the horizontal $Y = 0$ floor plane based on mesh bounding heights.
+  - **Relative Depth Ordering ($Z$)**: Maps canonical monocular depth proximity $P \in [0.0, 1.0]$ into scene depth with calibrated spread factors, placing closer foreground people nearer to the camera ($+Z$) without inventing fake metric units.
+  - **Occlusion Reconciliation**: Detects overlapping 2D boxes ($\text{IoU} > 0.12$) with close proximity ($|\Delta P| < 0.05$) and non-destructively flags `"occlusion_ambiguity"` while maintaining photographic composition.
+  - **Partial Reconstruction Resilience**: Handles incomplete scenes gracefully; subjects without 3D meshes remain registered in the scene graph and are rendered with in-scene wireframe bounding indicators.
+  - **Camera Controls & Viewport Navigation**: "Fit Scene" dynamically calculates the bounding sphere of all visible assembled people and frames the camera; "Focus Person" centers on selected entities; orbit, pan, zoom, and reset controls.
+  - **Interactive Entity Visibility**: Per-entity visibility toggle (`visible: boolean`) interactively hides or shows meshes and bounding volumes in the 3D viewport.
+  - **Complete Local Scene Persistence**: Assembled scenes, entities, scene graphs, and assembly reports are saved and recovered from `data/storage/scenes/{scene_id}.json` with atomic temporary writes.
 - **Genuine 3D Human Mesh Reconstruction (Phase 05)**:
   - **Local Model Architecture**: Integrates SPIN (SMPL Optimization in the Loop of Neural Networks, Kolotouros et al., ICCV 2019) with a ResNet-50 feature extractor and a 3-iteration iterative 6D rotation & shape parameter regressor.
   - **Pure PyTorch SMPL Linear Blend Skinning (LBS)**: Eliminates legacy C++ and `chumpy` dependencies, evaluating canonical template deformation, PCA shape blend shapes ($\beta$), and joint kinematic rotations in pure PyTorch on Apple Silicon `mps` or CUDA.
@@ -20,7 +32,7 @@ Current Status: **Phase 05: AI Human 3D Reconstruction Engine (Completed)**
     - **Wireframe Mode**: Displays genuine reconstructed polygon edge topology in technical cyan/white lines.
     - **Solid 3D Mode**: Renders smooth studio clay meshes under ambient and directional lighting with raycast selection highlighting.
   - **Multi-Person & Fault Tolerance**: Robust per-person bounding crop extraction with 15% context padding and aspect-ratio letterboxing. Partial failure isolation guarantees that failure to reconstruct one subject never aborts other subjects.
-  - **Entity Inspector Integration**: Displays 3D Mesh Status (`Ready`), Vertex Count ($6,890$), Face Count ($13,776$), Dimensions ($W \times H \times D$ in meters), Model Provenance (`SPIN + SMPL LBS (Pretrained)`), and Texture Status (`Geometry Only - Neutral Studio Clay`).
+  - **Entity Inspector Integration**: Displays 3D Mesh Status (`Ready`), Vertex Count ($6,890$), Face Count ($13,776$), Dimensions ($W \times H \times D$ in meters), Model Provenance (`SPIN + SMPL LBS (Pretrained)`), Texture Status (`Geometry Only - Neutral Studio Clay`), and 3D Scene Placement (`position`, `depth source`, `visibility`, `uncertainty flags`).
 - **Progressive Visual Reveal Pipeline**:
   - **Instant Photo Display**: Original image renders on the Three.js viewport immediately upon upload and server validation.
   - **Live Detection Boxes**: 3D bounding boxes render the moment person detection completes with stable entity IDs (`person-001`, `person-002`, ...).
@@ -28,16 +40,17 @@ Current Status: **Phase 05: AI Human 3D Reconstruction Engine (Completed)**
   - **Dynamic Depth Map Activation**: 8-bit normalized grayscale depth visualization unlocks the moment relative proximity computation completes.
   - **Dynamic Spatial Photo Activation**: Interactive 3D vertex-displaced mesh surface unlocks seamlessly once depth and photographic textures are available.
   - **Reconstructed Human Meshes**: Wireframe and Solid 3D representations unlock progressively as human mesh GLB assets become ready.
+  - **Multi-Person Scene Assembly**: Unifies all reconstructed meshes and indicators into an explorable 3D scene.
 - **Server-Sent Events (SSE) Push Architecture**: Real-time streaming (`GET /api/v1/jobs/{job_id}/stream`) with bounded 500-event FIFO buffer and automatic HTTP polling fallback for maximum reliability.
 - **Idempotent Frontend Event Reducer (`reduceProcessingEvent`)**: Pure state machine guaranteeing deterministic scene assembly from events, preserving camera positions, entity selections, and viewport modes across reconnections.
 - **Dynamic Representation Availability (`computeRepresentationAvailability`)**: Evaluates readiness across all 7 representations (`photo`, `detection`, `segmentation`, `depth`, `spatial_photo`, `wireframe`, `solid_3d`), displaying live status badges (`LIVE`, `ERR`).
-- **Live Pipeline Inspector**: Interactive panel reflecting real-time stage states, entity segmentation/reconstruction progress counters ("2 of 2 meshes reconstructed"), and partial failure alerts.
+- **Live Pipeline Inspector**: Interactive panel reflecting real-time stage states including `scene_assembly`, entity segmentation/reconstruction progress counters, and partial failure alerts.
 - **Cooperative Job Cancellation**: Clean cancellation via `POST /api/v1/jobs/{job_id}/cancel` and UI "Cancel Analysis" button, halting backend worker loops at cooperative checkpoints while retaining completed intermediate assets.
 - **Non-Fatal Partial Failure Isolation**: Gracefully catches and isolates non-fatal stage errors (e.g. depth failure, single-person crop failure) while preserving and displaying successful upstream and sibling results.
 - **Monocular Depth Estimation**: Local Depth Anything V2 Small neural network producing dense relative depth fields $[0.0, 1.0]$ with robust 2nd/98th percentile normalization.
 - **Interactive 3D Spatial Photography**: High-resolution $128 \times 128$ vertex displacement mesh with bounded parallax orbit controls (azimuth $\pm 18^\circ$, polar $75^\circ \text{--} 105^\circ$, damping $0.06$).
-- **Local Asset Storage**: Lossless float32 machine-readable `.npy` depth maps, grayscale visualization PNGs, 8-bit binary instance masks, binary GLTF meshes (`.glb`), and sanitized photos stored safely in `data/storage/`.
-- **Automated Verification**: **103 automated tests passing** across 5 test suites (backend pytest, frontend vitest, schema vitest, and Playwright E2E).
+- **Local Asset Storage**: Lossless float32 machine-readable `.npy` depth maps, grayscale visualization PNGs, 8-bit binary instance masks, binary GLTF meshes (`.glb`), sanitized photos, and scene JSON definitions stored safely in `data/storage/`.
+- **Automated Verification**: **116 automated tests passing** across 5 test suites (backend pytest, frontend vitest, schema vitest, and Playwright E2E).
 
 ---
 
