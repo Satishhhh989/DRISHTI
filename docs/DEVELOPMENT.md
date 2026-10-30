@@ -63,13 +63,13 @@ bash scripts/test.sh
 ```
 
 This executes:
-1. `packages/scene-schema`: Vitest schema validation, representation availability, contract, and representation registry tests (14 tests).
+1. `packages/scene-schema`: Vitest schema validation, representation availability, contract, registry, and project model tests (18 tests).
 2. `packages/shared-types`: Vitest event contract and DTO tests (2 tests).
-3. `apps/web`: Vitest component, store, event reducer, 3D mesh rendering, assembly inspector, skeleton overlay, motion controls, asset cache, and unified hybrid renderer tests (32 tests).
-4. `services/api`: Pytest backend test suite (unit tests, mock pipeline, real model MPS smoke tests, geometry validation, progressive event stream tests, scene assembly engine, skeleton validation, pose estimation, rigging, procedural animation, and disk persistence tests) (88 tests).
-5. `tests/e2e`: Playwright browser-level end-to-end tests including Phase 08 unified renderer representation verification (12 tests).
+3. `apps/web`: Vitest component, store, event reducer, 3D mesh rendering, assembly inspector, skeleton overlay, motion controls, asset cache, unified hybrid renderer, and interaction/persistence tests (37 tests).
+4. `services/api`: Pytest backend test suite (unit tests, mock pipeline, real model MPS smoke tests, geometry validation, progressive event stream tests, scene assembly engine, skeleton validation, pose estimation, rigging, procedural animation, project persistence, scene interaction, and export system tests) (102 tests).
+5. `tests/e2e`: Playwright browser-level end-to-end tests including Phase 09 project management, transform controls, and export actions verification (13 tests).
 
-**Total Verified Tests: 148 passing.**
+**Total Verified Tests: 172 passing.**
 
 ### Running Individual Test Suites
 
@@ -81,6 +81,11 @@ bash scripts/test_backend.sh
 source .venv/bin/activate
 PYTHONPATH=services/api pytest services/api/tests -v
 
+# Phase 09 Persistence & Export backend tests
+PYTHONPATH=services/api pytest services/api/tests/test_project_persistence.py -v
+PYTHONPATH=services/api pytest services/api/tests/test_scene_interaction.py -v
+PYTHONPATH=services/api pytest services/api/tests/test_export_system.py -v
+
 # Motion Subsystem backend tests (Phase 07)
 PYTHONPATH=services/api pytest services/api/tests/test_skeleton_schema.py -v
 PYTHONPATH=services/api pytest services/api/tests/test_pose_estimator.py -v
@@ -91,10 +96,13 @@ PYTHONPATH=services/api pytest services/api/tests/test_pipeline_motion.py -v
 # Frontend tests (vitest)
 pnpm --filter @photo-to-3d/web test
 
+# Interaction, Persistence & Export UI tests (Phase 09)
+pnpm --filter @photo-to-3d/web test apps/web/tests/interaction-persistence.test.tsx
+
 # Unified Hybrid Renderer UI tests (Phase 08)
 pnpm --filter @photo-to-3d/web test apps/web/tests/unified-renderer.test.tsx
 
-# Schema package tests (Phase 08 Registry)
+# Schema package tests (Phase 09 Project & Phase 08 Registry)
 pnpm --filter @photo-to-3d/scene-schema test
 
 # Shared types tests

@@ -470,4 +470,51 @@ interface AnimationClipData {
   tracks: JointTransformTrack[];
   createdAt: string;
 }
+
+---
+
+## 10. Project Model & Asset Manifest (Phase 09)
+
+### 10.1 Project Schema (`Project`)
+
+```typescript
+interface Project {
+  id: string;                         // Stable unique project identifier (e.g. "proj-a1b2c3d4")
+  name: string;                       // User-visible project name
+  schemaVersion: "1.0.0";             // Strict schema versioning
+  createdAt: string;                  // ISO 8601 creation timestamp
+  updatedAt: string;                  // ISO 8601 last-modified timestamp
+  sceneId: string;                    // Associated canonical scene reference
+  sourceImage: SourceImageMetadata;   // Original photo metadata
+  settings: ProjectSettings;          // Workspace preferences (view mode, grid, reference plane)
+  assetManifest: ProjectAssetEntry[]; // Complete list of project-referenced asset files
+  processingState: ProjectProcessingState; // Stage completion flags
+  metadata?: Record<string, unknown>; // User notes and extension attributes
+}
+
+interface ProjectAssetEntry {
+  assetId: string;                    // Unique asset identifier
+  assetType: "source_photo" | "depth_map" | "mask" | "mesh" | "skeleton" | "other";
+  relativePath: string;               // Storage-relative path (e.g. "assets/meshes/person_0.glb")
+  filename: string;                   // Sanitized filename
+  checksumSha256?: string;            // SHA-256 integrity hash
+  sizeBytes?: number;                 // Asset file size in bytes
+  mimeType?: string;                  // Content type
+}
+
+interface ProjectSettings {
+  activeRepresentation?: string;      // Default active representation mode
+  showGrid?: boolean;                 // 3D coordinate floor grid visibility
+  showReferencePlane?: boolean;       // Photographic reference plane visibility
+}
+
+interface ProjectProcessingState {
+  detection: boolean;
+  segmentation: boolean;
+  depth: boolean;
+  reconstruction: boolean;
+  assembly: boolean;
+  motion: boolean;
+}
+```
 ```

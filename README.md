@@ -2,14 +2,28 @@
 
 A local-first AI-powered spatial reconstruction engine that transforms ordinary multi-person photographs into interactive, animated 3D scenes.
 
-Current Status: **Phase 08: Unified Hybrid Renderer (Completed)**
+Current Status: **Phase 09: Interaction, Persistence & Export (Completed)**
 
 ---
 
-## Capabilities (Phase 08)
+## Capabilities (Phase 09)
 
 - **Local-First AI Architecture**: Runs entirely offline on the user's machine without any external cloud vision APIs or telemetry.
 - **Hardware Acceleration**: Automatic capability discovery and execution on Apple Silicon Metal Performance Shaders (`mps`), NVIDIA GPU (`cuda`), and optimized CPU fallback.
+- **Interaction, Persistence & Export Subsystem (Phase 09)**:
+  - **Local Project Management**: Project creation, renaming, opening, recent projects discovery, and project-level metadata tracking.
+  - **Atomic Disk Persistence**: All project and scene state writes are buffered to temporary `.tmp` files, flushed, and atomically replaced (`tmp_path.replace(path)`) to guarantee zero file corruption from interrupted saves.
+  - **Asset Manifest Generation**: Computes structured manifest listing all referenced photographs, segmentation masks, depth maps, and GLB meshes with relative storage paths, MIME types, and SHA-256 integrity hashes.
+  - **Scene Interaction & Interactive Transforms**: Real-time manipulation of reconstructed people with Position ($X, Y, Z$ in meters), Rotation ($Y$ yaw in degrees), and Uniform Scale controls in the Contextual Inspector.
+  - **Server-Side Transform Constraints**: Strict validation preventing NaNs, bounding coordinates within $[-50\text{m}, 50\text{m}]$, and asserting positive scales within $[0.05, 10.0]$.
+  - **Reliable Reset Transform**: Restores entity placement back to initial assembled depth-projected coordinates.
+  - **Dirty State Tracking**: Unsaved changes indicator alerts users to workspace edits; auto-clears upon saving.
+  - **Real Local Export Engine**:
+    - **Single Entity Mesh (GLB)**: Validates geometry via `trimesh` and exports binary GLTF with neutral clay PBR material; rejects export of unreconstructed entities honestly.
+    - **Assembled Multi-Person Scene (GLB)**: Exports multi-person 3D scenes preserving spatial coordinates, orientations, and node transforms.
+    - **Canonical Scene Metadata (JSON)**: Exports canonical scene metadata with schema version, entity IDs, transforms, and provenance.
+    - **Portable Project Archive (.zip)**: Packages `project.json`, `scene.json`, `manifest.json`, and all local asset binaries into a self-contained ZIP archive.
+    - **Anti-Zip-Slip Security**: Reimports portable project archives safely with strict path traversal defense, validating relative paths and schema integrity.
 - **Unified Hybrid Renderer Architecture (Phase 08)**:
   - **Single Scene, Multiple Representations**: One unified rendering pipeline presenting the authoritative scene through 9 distinct representations while preserving entity identity, scene transforms, and user interactions.
   - **Representation Registry (`packages/scene-schema/src/registry.ts`)**: Central registry declaring metadata, categories, required assets, supported scene types, rendering behaviors, and known limitations for all 9 representations (`original`, `detection`, `segmentation`, `depth`, `spatial_photo`, `wireframe`, `solid3d`, `articulated`, `combined`).

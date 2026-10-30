@@ -257,7 +257,31 @@ Orchestrates 18 sequential stages with monotonic sequence numbers:
   - `depth/`: Machine-readable float32 `.npy` depth maps and 8-bit grayscale `.png` visualizations.
   - `meshes/`: Binary GLTF human meshes named `{scene_id}_{entity_id}.glb`.
   - `scenes/`: Persisted JSON scene graphs named `{scene_id}.json`.
+  - `projects/`: Persisted JSON project metadata and manifests named `{project_id}.json`.
   - `skeletons/`: JSON kinematic skeleton definitions named `{scene_id}_{entity_id}_skeleton.json`.
   - `rigs/`: Rig and skinning metadata JSON files.
   - `animations/`: Procedural animation clip JSON files.
 - Path traversal protection (`StorageSecurityError`) on all file operations.
+
+### 3.14 Interaction, Persistence & Real Export Engine (Phase 09)
+
+Phase 09 transitions DRISHTI from viewing reconstructed scenes to actively manipulating, persisting, and exporting them:
+
+- **Project Model & Asset Manifest (`ProjectManager`)**:
+  - `Project` entity encapsulating stable ID, name, timestamps, scene references, workspace preferences, processing state, and structured asset manifest.
+  - Asset manifest tracks all referenced files with relative paths, MIME types, and SHA-256 checksums without embedding giant binary data inside JSON metadata.
+- **Atomic Local Persistence**:
+  - All project and scene updates write to temporary `.tmp` files first, flush buffers, and atomically replace targets to eliminate corruption from interrupted writes.
+  - Resilient project recovery: missing assets are flagged without corrupting valid scene entities or fabricating fake geometry.
+- **Scene Interaction & Transform Constraints**:
+  - Direct selection resolves to stable entity IDs.
+  - Interactive transform editing: Position ($X, Y, Z$ in meters), Rotation (Euler $Y$), and Scale ($X, Y, Z$).
+  - Server-side validation: asserts finite numbers, bounds positions within $[-50\text{m}, 50\text{m}]$, and restricts scale to $[0.05, 10.0]$.
+  - Reliable Reset Transform restoring initial assembled depth-projected coordinates.
+  - Workspace dirty tracking: unsaved changes indicator appears on edits; cleared upon saving.
+- **Real Local Export Engine (`ExportEngine`)**:
+  - **Single Entity Mesh (GLB)**: Validates geometry via `trimesh`, applies node transforms if requested, and exports standard binary GLTF. Rejects export if entity has no reconstructed mesh (honest reporting, no fake mannequins).
+  - **Assembled Multi-Person Scene (GLB)**: Exports multi-person 3D scene preserving relative positions, rotations, and node transforms.
+  - **Scene Metadata (JSON)**: Exports canonical scene metadata.
+  - **Portable Project Archive (.zip)**: Bundles `project.json`, `scene.json`, `manifest.json`, and all referenced local assets into a self-contained ZIP archive.
+  - **Anti-Zip-Slip Security**: Archive import strictly checks all entry paths, rejecting absolute paths, path traversal (`..`), and illegal characters. Reimports safely into isolated local project storage.
