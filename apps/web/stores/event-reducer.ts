@@ -129,6 +129,37 @@ export function reduceProcessingEvent<T extends ReducerState>(
           nextCurrentScene.entities = updatedEntities;
         }
 
+        // Reconstructed 3D Human Mesh ready
+        if (assetRef.assetType === "mesh" && event.entityId) {
+          const updatedEntities = nextCurrentScene.entities.map((entity) => {
+            if (entity.id === event.entityId) {
+              return {
+                ...entity,
+                geometryRef: assetRef.assetId,
+                reconstruction: {
+                  status: "ready" as const,
+                  meshAssetId: assetRef.assetId,
+                  meshUrl: assetRef.uri,
+                  textureAvailability: "none" as const,
+                  reconstructedAt: event.timestamp,
+                },
+              };
+            }
+            return entity;
+          });
+          nextCurrentScene.entities = updatedEntities;
+          if (nextCurrentScene.representations) {
+            nextCurrentScene.representations.wireframe = {
+              status: "ready",
+              updatedAt: event.timestamp,
+            };
+            nextCurrentScene.representations.solid3d = {
+              status: "ready",
+              updatedAt: event.timestamp,
+            };
+          }
+        }
+
         // Depth visualization PNG ready
         if (assetRef.assetType === "depth_visualization") {
           nextDepthVisUrl = assetRef.uri;
@@ -173,6 +204,22 @@ export function reduceProcessingEvent<T extends ReducerState>(
           updatedAt: event.timestamp,
         };
       }
+
+      // If human reconstruction completed, enable wireframe & solid3d
+      if (
+        (event.stageIdentifier === "human_reconstruction" ||
+          event.stageIdentifier === "mesh_reconstruction") &&
+        nextCurrentScene?.representations
+      ) {
+        nextCurrentScene.representations.wireframe = {
+          status: "ready",
+          updatedAt: event.timestamp,
+        };
+        nextCurrentScene.representations.solid3d = {
+          status: "ready",
+          updatedAt: event.timestamp,
+        };
+      }
       break;
     }
 
@@ -212,6 +259,24 @@ export function reduceProcessingEvent<T extends ReducerState>(
             error: event.error?.message,
           };
         }
+      }
+
+      // If human reconstruction failed, record representation status
+      if (
+        (event.stageIdentifier === "human_reconstruction" ||
+          event.stageIdentifier === "mesh_reconstruction") &&
+        nextCurrentScene?.representations
+      ) {
+        nextCurrentScene.representations.wireframe = {
+          status: "failed",
+          error: event.error?.message,
+          updatedAt: event.timestamp,
+        };
+        nextCurrentScene.representations.solid3d = {
+          status: "failed",
+          error: event.error?.message,
+          updatedAt: event.timestamp,
+        };
       }
 
       // If overall pipeline execution failed

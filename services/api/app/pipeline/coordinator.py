@@ -17,6 +17,7 @@ Executes the sequenced lifecycle with genuine progressive state updates and canc
 """
 
 import asyncio
+import cv2
 from datetime import datetime, timezone
 import io
 from pathlib import Path
@@ -46,14 +47,25 @@ from app.pipeline.mock import (
     MockPersonSegmentor,
 )
 from app.pipeline.models import model_manager
+from app.pipeline.reconstructor import (
+    HumanReconstructor,
+    MockHumanReconstructor,
+    SpinHumanReconstructor,
+)
 from app.pipeline.segmentor import YoloPersonSegmentor
 from app.scene.manager import scene_manager
+from app.schemas.common import EulerRotation, Vector3D
 from app.schemas.events import AssetReference, StructuredError
 from app.schemas.scene import (
     AnimationState,
     ConfidenceMetadata,
+    CoordinateConvention,
     DepthNormalizationMetadata,
     DetectionInfo,
+    GeometryMetadata,
+    HumanReconstructionData,
+    MeshBounds,
+    ModelProvenance,
     RepresentationAsset,
     Scene,
     SceneDepthMetadata,
@@ -72,10 +84,12 @@ class PipelineCoordinator:
         detector: Optional[IPersonDetector] = None,
         segmentor: Optional[ISegmentor] = None,
         depth_estimator: Optional[IDepthEstimator] = None,
+        reconstructor: Optional[HumanReconstructor] = None,
     ):
         self._detector = detector
         self._segmentor = segmentor
         self._depth_estimator = depth_estimator
+        self._reconstructor = reconstructor
 
     def get_detector(self) -> IPersonDetector:
         if self._detector is not None:
@@ -100,12 +114,30 @@ class PipelineCoordinator:
         logger.warning("Depth Anything weights not found; falling back to MockDepthEstimator")
         return MockDepthEstimator()
 
+    def get_reconstructor(self) -> HumanReconstructor:
+        if self._reconstructor is not None:
+            return self._reconstructor
+        if model_manager.is_model_available("spin-human-reconstruction"):
+            ckpt_path = model_manager.get_model_path("spin-human-reconstruction")
+            smpl_path = ckpt_path.parent / "SMPL_N_model.npz"
+            mean_path = ckpt_path.parent / "smpl_mean_params.npz"
+            device = device_manager.device
+            return SpinHumanReconstructor(
+                checkpoint_path=ckpt_path,
+                smpl_npz_path=smpl_path,
+                mean_params_path=mean_path,
+                device=device,
+            )
+        logger.warning("SPIN/SMPL weights not found; falling back to MockHumanReconstructor")
+        return MockHumanReconstructor(device=device_manager.device)
+
     async def execute_pipeline(
         self,
         scene_id: str,
         job_id: str,
         confidence_threshold: float = 0.35,
         include_depth: bool = True,
+        include_reconstruction: bool = True,
     ) -> Scene:
         """Executes the progressive DRISHTI image analysis and spatial-photo pipeline."""
         scene = scene_manager.get_scene(scene_id)
@@ -614,6 +646,184 @@ class PipelineCoordinator:
                     )
                     scene_manager.update_scene(scene)
 
+            # -------------------------------------------------------------
+            # Stage 11: HUMAN 3D RECONSTRUCTION ENGINE
+            # -------------------------------------------------------------
+            if include_reconstruction and entities:
+                # Check cancellation
+                if job_tracker.is_cancelled(job_id):
+                    scene.processing_status = "ready"
+                    scene_manager.update_scene(scene)
+                    return scene
+
+                job_tracker.update_job_status(job_id, status="running", current_stage="human_reconstruction")
+                event_emitter.emit(
+                    job_id=job_id,
+                    scene_id=scene_id,
+                    event_type="stage_started",
+                    stage_identifier="human_reconstruction",
+                    status="running",
+                    progress=0.92,
+                    message=f"Starting 3D human mesh reconstruction for {len(entities)} detected people...",
+                )
+
+                try:
+                    reconstructor = self.get_reconstructor()
+                    total_people = len(entities)
+                    successful_meshes = 0
+
+                    img_bgr = cv2.imread(str(photo_path))
+                    if img_bgr is not None:
+                        img_rgb = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2RGB)
+                    else:
+                        img_rgb = np.zeros((scene.source_image.height, scene.source_image.width, 3), dtype=np.uint8)
+
+                    for idx, entity in enumerate(entities, start=1):
+                        # Cooperative cancellation check between people
+                        if job_tracker.is_cancelled(job_id):
+                            logger.info(f"Cancellation received during human reconstruction at entity {entity.id}")
+                            break
+
+                        try:
+                            # Retrieve segmentation mask if available
+                            seg_res = seg_map.get(entity.id)
+                            mask_bytes = seg_res.mask_png_bytes if seg_res else None
+                            depth_info = entity.depth
+
+                            rec_result = reconstructor.reconstruct(
+                                image_rgb=img_rgb,
+                                bounding_box=entity.detection.bounding_box,
+                                mask_gray=mask_bytes,
+                                depth_stats=depth_info.model_dump() if depth_info else None,
+                            )
+
+                            # Save GLB asset
+                            mesh_filename = f"{scene_id}_{entity.id}.glb"
+                            mesh_asset = asset_manager.register_mesh(
+                                content=rec_result.glb_bytes,
+                                filename=mesh_filename,
+                                scene_id=scene_id,
+                                entity_id=entity.id,
+                            )
+
+                            # Compute spatial placement in scene coordinates
+                            # Canonical scene: +X right, +Y up, +Z forward
+                            box = entity.detection.bounding_box
+                            img_h, img_w = img_rgb.shape[:2]
+                            aspect = img_w / img_h
+                            box_center_x = (box.x_min + box.x_max) / 2.0
+                            box_center_y = (box.y_min + box.y_max) / 2.0
+
+                            # Map normalized 2D image coordinates to Three.js scene space
+                            pos_x = float((box_center_x - 0.5) * aspect * 2.0)
+                            pos_y = float((0.5 - box_center_y) * 2.0)
+                            # Use depth proximity if available to stagger people along Z
+                            if depth_info and depth_info.median_proximity is not None:
+                                pos_z = float((depth_info.median_proximity - 0.5) * 0.4)
+                            else:
+                                pos_z = 0.0
+
+                            entity.reconstruction = HumanReconstructionData(
+                                status="ready",
+                                mesh_asset_id=mesh_asset.asset_id,
+                                mesh_url=f"/api/v1/assets/meshes/{mesh_asset.filename}",
+                                metadata_asset_id=None,
+                                model_provenance=ModelProvenance(
+                                    name=rec_result.model_name,
+                                    version=rec_result.model_version,
+                                    device=rec_result.device,
+                                ),
+                                geometry_metadata=GeometryMetadata(
+                                    vertex_count=len(rec_result.vertices),
+                                    face_count=len(rec_result.faces),
+                                    bounds=MeshBounds(
+                                        min=rec_result.bounds_min,
+                                        max=rec_result.bounds_max,
+                                    ),
+                                    dimensions=rec_result.dimensions,
+                                ),
+                                coordinate_convention=CoordinateConvention(
+                                    up="+Y", forward="+Z", right="+X", units="meters"
+                                ),
+                                transform=Transform(
+                                    position=Vector3D(x=pos_x, y=pos_y, z=pos_z),
+                                    rotation=EulerRotation(x=0.0, y=0.0, z=0.0),
+                                    scale=Vector3D(x=1.0, y=1.0, z=1.0),
+                                ),
+                                texture_availability="none",
+                                quality_score=rec_result.quality_score,
+                                warnings=rec_result.warnings,
+                                reconstructed_at=datetime.now(timezone.utc).isoformat(),
+                            )
+                            entity.geometry_ref = mesh_asset.asset_id
+                            successful_meshes += 1
+
+                            # Progressive entity update commit
+                            scene_manager.update_scene(scene)
+
+                            # Emit asset_ready event for the reconstructed mesh
+                            event_emitter.emit(
+                                job_id=job_id,
+                                scene_id=scene_id,
+                                event_type="asset_ready",
+                                stage_identifier="human_reconstruction",
+                                status="running",
+                                progress=0.92 + (0.04 * (idx / total_people)),
+                                asset_reference=AssetReference(
+                                    asset_id=mesh_asset.asset_id,
+                                    asset_type="mesh",
+                                    uri=f"/api/v1/assets/meshes/{mesh_asset.filename}",
+                                    mime_type="model/gltf-binary",
+                                    size_bytes=mesh_asset.size_bytes,
+                                ),
+                                message=f"3D human mesh ready for {entity.id} ({idx} of {total_people}).",
+                            )
+
+                        except Exception as person_rec_err:
+                            logger.warning(f"Reconstruction failed for entity {entity.id}: {person_rec_err}")
+                            entity.reconstruction = HumanReconstructionData(
+                                status="failed",
+                                error_message=str(person_rec_err),
+                                texture_availability="none",
+                                reconstructed_at=datetime.now(timezone.utc).isoformat(),
+                            )
+                            scene_manager.update_scene(scene)
+
+                    if successful_meshes > 0:
+                        scene.representations.wireframe = RepresentationAsset(
+                            status="ready",
+                            updated_at=datetime.now(timezone.utc).isoformat(),
+                        )
+                        scene.representations.solid3d = RepresentationAsset(
+                            status="ready",
+                            updated_at=datetime.now(timezone.utc).isoformat(),
+                        )
+                        scene_manager.update_scene(scene)
+
+                    event_emitter.emit(
+                        job_id=job_id,
+                        scene_id=scene_id,
+                        event_type="stage_completed",
+                        stage_identifier="human_reconstruction",
+                        status="running",
+                        progress=0.96,
+                        message=f"Human 3D reconstruction complete ({successful_meshes} of {total_people} meshes generated).",
+                    )
+
+                except Exception as rec_err:
+                    logger.warning(f"Reconstruction subsystem error: {rec_err}")
+                    event_emitter.emit(
+                        job_id=job_id,
+                        scene_id=scene_id,
+                        event_type="stage_failed",
+                        stage_identifier="human_reconstruction",
+                        status="running",
+                        error=StructuredError(
+                            code="RECONSTRUCTION_FAILED",
+                            message=str(rec_err),
+                        ),
+                    )
+
             # Check cancellation
             if job_tracker.is_cancelled(job_id):
                 scene.processing_status = "ready"
@@ -621,7 +831,7 @@ class PipelineCoordinator:
                 return scene
 
             # -------------------------------------------------------------
-            # Stage 11: SCENE_UPDATE
+            # Stage 12: SCENE_UPDATE
             # -------------------------------------------------------------
             job_tracker.update_job_status(job_id, status="running", current_stage="scene_update")
             event_emitter.emit(

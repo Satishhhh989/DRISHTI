@@ -77,6 +77,48 @@ class EntityDepthInfo(BaseModel):
     error: Optional[str] = None
 
 
+class MeshBounds(BaseModel):
+    min: List[float] = Field(default_factory=lambda: [0.0, 0.0, 0.0])
+    max: List[float] = Field(default_factory=lambda: [0.0, 0.0, 0.0])
+
+
+class GeometryMetadata(BaseModel):
+    vertex_count: int = Field(default=0, ge=0)
+    face_count: int = Field(default=0, ge=0)
+    bounds: MeshBounds = Field(default_factory=MeshBounds)
+    dimensions: List[float] = Field(default_factory=lambda: [0.0, 0.0, 0.0])
+
+
+class ModelProvenance(BaseModel):
+    name: str = "SPIN"
+    version: str = "1.0.0"
+    device: str = "cpu"
+    checkpoint: Optional[str] = None
+
+
+class CoordinateConvention(BaseModel):
+    up: str = "+Y"
+    forward: str = "+Z"
+    right: str = "+X"
+    units: str = "meters"
+
+
+class HumanReconstructionData(BaseModel):
+    status: Literal["none", "pending", "processing", "ready", "failed"] = "none"
+    mesh_asset_id: Optional[str] = None
+    mesh_url: Optional[str] = None
+    metadata_asset_id: Optional[str] = None
+    model_provenance: Optional[ModelProvenance] = None
+    geometry_metadata: Optional[GeometryMetadata] = None
+    coordinate_convention: Optional[CoordinateConvention] = Field(default_factory=CoordinateConvention)
+    transform: Optional[Transform] = None
+    texture_availability: Literal["none", "partial", "full"] = "none"
+    quality_score: Optional[float] = None
+    warnings: List[str] = Field(default_factory=list)
+    error_message: Optional[str] = None
+    reconstructed_at: Optional[str] = None
+
+
 class SceneEntity(BaseModel):
     id: str = Field(..., min_length=1, description="Unique entity identifier")
     entity_type: EntityType = Field(default="person")
@@ -94,6 +136,7 @@ class SceneEntity(BaseModel):
     detection: Optional[DetectionInfo] = None
     segmentation: Optional[SegmentationInfo] = None
     depth: Optional[EntityDepthInfo] = None
+    reconstruction: Optional[HumanReconstructionData] = None
 
 
 class DepthNormalizationMetadata(BaseModel):

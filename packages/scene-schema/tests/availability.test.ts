@@ -137,5 +137,68 @@ describe("computeRepresentationAvailability", () => {
     expect(availability.wireframe.status).toBe("unavailable");
     expect(availability.solid3d.status).toBe("unavailable");
   });
+
+  it("marks wireframe and solid3d ready when a reconstructed 3D mesh is available", () => {
+    const scene = createInitialScene({
+      id: "scene-1",
+      name: "Test Scene",
+      sourceImage: {
+        assetId: "photo-1",
+        filename: "test.jpg",
+        width: 800,
+        height: 600,
+        aspectRatio: 1.333,
+        mimeType: "image/jpeg",
+        sizeBytes: 1000,
+        uploadedAt: new Date().toISOString(),
+      },
+    });
+
+    scene.entities.push({
+      id: "person-001",
+      entityType: "person",
+      sourceImageId: "photo-1",
+      transform: {
+        position: { x: 0, y: 0, z: 0 },
+        rotation: { x: 0, y: 0, z: 0 },
+        scale: { x: 1, y: 1, z: 1 },
+      },
+      visibility: true,
+      animationState: { currentClip: null, isPlaying: false, playbackSpeed: 1, loop: true },
+      reconstructionStatus: "ready",
+      detection: {
+        confidence: 0.95,
+        boundingBox: { xMin: 0.1, yMin: 0.2, xMax: 0.5, yMax: 0.8 },
+        pixelBox: [80, 120, 400, 480],
+        model: "yolo",
+        detectedAt: new Date().toISOString(),
+        status: "ready",
+      },
+      reconstruction: {
+        status: "ready",
+        meshAssetId: "mesh-person-001.glb",
+        meshUrl: "/api/v1/assets/meshes/mesh-person-001.glb",
+        geometryMetadata: {
+          vertexCount: 6890,
+          faceCount: 13776,
+          bounds: { min: [-0.8, -1.0, -0.2], max: [0.8, 0.8, 0.2] },
+          dimensions: [1.6, 1.8, 0.4],
+        },
+        modelProvenance: {
+          name: "SPIN",
+          version: "1.0.0",
+          device: "mps",
+        },
+        textureAvailability: "none",
+        reconstructedAt: new Date().toISOString(),
+      },
+    });
+
+    const availability = computeRepresentationAvailability(scene, null, false);
+    expect(availability.wireframe.status).toBe("ready");
+    expect(availability.wireframe.isSelectable).toBe(true);
+    expect(availability.solid3d.status).toBe("ready");
+    expect(availability.solid3d.isSelectable).toBe(true);
+  });
 });
 

@@ -5,7 +5,7 @@ test.describe("Phase 01 & 02: Workspace & Viewport E2E Verification", () => {
     await page.goto("/");
     await expect(page.locator('[data-testid="workspace-root"]')).toBeVisible();
     await expect(page.getByText("PHOTO → 3D ENGINE")).toBeVisible();
-    await expect(page.getByText(/Phase 0[1-4]/)).toBeVisible();
+    await expect(page.getByText(/Phase 0[1-5]/)).toBeVisible();
   });
 
   test("2. The upload control is visible in top bar and empty viewport", async ({ page }) => {
@@ -114,5 +114,22 @@ test.describe("Phase 01 & 02: Workspace & Viewport E2E Verification", () => {
     await expect(page.locator('[data-testid="stage-row-segmentation"]')).toBeVisible();
     await expect(page.locator('[data-testid="stage-row-depth"]')).toBeVisible();
     await expect(page.locator('[data-testid="stage-row-spatial"]')).toBeVisible();
+    await expect(page.locator('[data-testid="stage-row-reconstruction"]')).toBeVisible();
+  });
+
+  test("9. Phase 05 Human 3D Wireframe and Solid modes are functional", async ({ page }) => {
+    await page.goto("/");
+
+    const wireframeTab = page.locator('[data-testid="mode-wireframe"]');
+    const solidTab = page.locator('[data-testid="mode-solid3d"]');
+
+    await expect(wireframeTab).toBeVisible();
+    await expect(solidTab).toBeVisible();
+
+    await wireframeTab.click();
+    await expect(wireframeTab).toHaveAttribute("aria-pressed", "true");
+
+    await solidTab.click();
+    await expect(solidTab).toHaveAttribute("aria-pressed", "true");
   });
 });

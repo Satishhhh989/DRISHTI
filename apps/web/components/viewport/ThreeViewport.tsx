@@ -6,6 +6,7 @@ import { CameraController } from "./CameraController";
 import { GridFloor } from "./GridFloor";
 import { ViewportErrorBoundary } from "./ViewportErrorBoundary";
 import { PhotoPlane } from "@/components/scene/PhotoPlane";
+import { HumanMeshLayer } from "@/components/scene/HumanMeshLayer";
 import { UploadButton } from "@/components/controls/UploadButton";
 import { useSceneStore } from "@/stores/scene-store";
 import { useUIStore } from "@/stores/ui-store";
@@ -20,6 +21,7 @@ export const ThreeViewport: React.FC = () => {
   const localPhotoUrl = useSceneStore((state) => state.localPhotoUrl);
   const photoDimensions = useSceneStore((state) => state.photoDimensions);
   const activeRepresentation = useSceneStore((state) => state.activeRepresentation);
+  const currentScene = useSceneStore((state) => state.currentScene);
   const setLocalPhoto = useSceneStore((state) => state.setLocalPhoto);
   const setScene = useSceneStore((state) => state.setScene);
   const setIsUploading = useSceneStore((state) => state.setIsUploading);
@@ -79,6 +81,14 @@ export const ThreeViewport: React.FC = () => {
     [setLocalPhoto, setScene, setIsUploading, setError, setStatusNotice]
   );
 
+  const hasReconstructedMeshes = Boolean(
+    currentScene?.entities?.some(
+      (e) =>
+        e.reconstruction?.status === "ready" &&
+        Boolean(e.reconstruction?.meshUrl || e.reconstruction?.meshAssetId)
+    )
+  );
+
   if (!mounted) {
     return <div className={styles.viewportContainer} />;
   }
@@ -91,15 +101,15 @@ export const ThreeViewport: React.FC = () => {
       onDrop={handleDrop}
       data-testid="viewport-container"
     >
-      {/* Representation Notice when mode is not yet produced by later AI phases */}
-      {activeRepresentation === "wireframe" && (
+      {/* Representation Notice when mode is not yet produced by reconstruction */}
+      {activeRepresentation === "wireframe" && !hasReconstructedMeshes && (
         <div className={styles.representationNotice} data-testid="wireframe-placeholder">
           <span className={styles.noticeBadge}>Phase 06</span>
           <span>Polygon wireframe geometry not generated yet. Pipeline activates in Phase 06.</span>
         </div>
       )}
 
-      {activeRepresentation === "solid3d" && (
+      {activeRepresentation === "solid3d" && !hasReconstructedMeshes && (
         <div className={styles.representationNotice} data-testid="solid3d-placeholder">
           <span className={styles.noticeBadge}>Phase 06 / 07</span>
           <span>Solid volumetric human mesh not generated yet. Reconstruction activates in Phase 06.</span>
@@ -151,6 +161,11 @@ export const ThreeViewport: React.FC = () => {
                   photoUrl={localPhotoUrl}
                   aspectRatio={photoDimensions.aspect}
                 />
+              )}
+
+              {/* Reconstructed 3D Human Mesh (Wireframe or Shaded Solid) */}
+              {(activeRepresentation === "wireframe" || activeRepresentation === "solid3d") && (
+                <HumanMeshLayer mode={activeRepresentation} />
               )}
 
               {/* Camera navigation */}

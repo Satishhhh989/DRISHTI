@@ -88,6 +88,9 @@ interface SceneEntity {
   
   // Phase 03 Extensions
   depthInfo?: EntityDepthInfo;        // Per-person depth statistics and proximity
+  
+  // Phase 05 Extensions
+  humanReconstruction?: HumanReconstructionData; // 3D parametric human mesh reconstruction
 }
 ```
 
@@ -126,6 +129,52 @@ interface EntityDepthInfo {
   depthVariation: number;             // Standard deviation across entity pixels
   pixelCoverage: number;              // Number of depth pixels sampled
   method: "mask" | "bounding_box";    // Sampling method utilized
+}
+```
+
+### 4.4 Human Reconstruction Data (Phase 05)
+
+Tracks genuine 3D parametric human mesh reconstruction, model provenance, and geometric statistics:
+
+```typescript
+interface MeshBounds {
+  min: [number, number, number];      // [xMin, yMin, zMin] in meters
+  max: [number, number, number];      // [xMax, yMax, zMax] in meters
+  dimensions: [number, number, number]; // [width, height, depth] in meters
+}
+
+interface GeometryMetadata {
+  vertexCount: number;                // Standard SMPL = 6,890 vertices
+  faceCount: number;                  // Standard SMPL = 13,776 triangular faces
+  hasNormals: boolean;                // Surface vertex normals computed
+  isWatertight: boolean;              // Watertight manifold status
+  bounds: MeshBounds;                 // 3D spatial extents
+}
+
+interface ModelProvenance {
+  modelName: string;                  // e.g. "SPIN" (Kolotouros et al., ICCV 2019)
+  checkpoint: string;                 // Checkpoint filename or version tag
+  bodyModel: string;                  // "SMPL-Neutral"
+  device: string;                     // "mps", "cuda", or "cpu"
+  inferredAt: string;                 // ISO 8601 timestamp
+}
+
+interface CoordinateConvention {
+  upAxis: "+Y";                       // Vertical elevation axis
+  frontAxis: "+Z";                    // Axis pointing towards camera
+  rightAxis: "+X";                    // Lateral right axis
+  units: "meters";                    // Real-world metric scale
+}
+
+interface HumanReconstructionData {
+  status: "unstarted" | "reconstructing" | "ready" | "failed";
+  meshAssetId?: string;               // Binary GLTF asset ID
+  meshUri?: string;                   // Relative or absolute URI to .glb asset
+  geometry?: GeometryMetadata;        // Structural mesh statistics
+  provenance?: ModelProvenance;       // Model lineage and hardware runtime
+  coordinateConvention?: CoordinateConvention; // Coordinate system alignment
+  textureStatus: "untextured_clay";   // Studio clay PBR material
+  error?: string;                     // Detailed error message if reconstruction failed
 }
 ```
 
@@ -197,14 +246,14 @@ DRISHTI provides multiple visualization layers in the viewport:
 3. **`segmentation`**: Color-tinted semi-transparent alpha overlays for person silhouettes.
 4. **`depth`**: Normalized 8-bit grayscale depth visualization ($255 = \text{closest}$, $0 = \text{farthest}$).
 5. **`spatial_photo`**: Interactive 3D mesh surface with vertex displacement and bounded parallax camera.
-6. **`wireframe`**: Reconstructed 3D polygon geometry (honest placeholder for Phase 06).
-7. **`solid3d`**: Solid reconstructed 3D human meshes (honest placeholder for Phase 06/07).
+6. **`wireframe`**: Reconstructed 3D polygon geometry showing genuine model topology lines (unlocked in Phase 05).
+7. **`solid3d`**: Solid reconstructed 3D human meshes with neutral studio clay PBR material (unlocked in Phase 05).
 
 Scene representations tracked in `SceneRepresentations`:
 - `photo`: `ready` when an image is loaded.
 - `spatial_photo`: `ready` when depth estimation has successfully computed.
-- `wireframe`: `unavailable` (Phase 06).
-- `solid3d`: `unavailable` (Phase 06/07).
+- `wireframe`: `ready` when one or more human entities have reconstructed 3D meshes.
+- `solid3d`: `ready` when one or more human entities have reconstructed 3D meshes.
 
 ### 6.1 Representation Availability Model (`computeRepresentationAvailability`)
 
@@ -214,8 +263,8 @@ Availability of each viewport visualization mode is dynamically calculated using
 - **`segmentation`**: `ready` if $\ge 1$ entity has a persisted mask asset; `processing` if segmentation running; otherwise `pending` or `unavailable`.
 - **`depth`**: `ready` if normalized grayscale depth visualization asset is present; `processing` if depth model running; `failed` if depth failed; otherwise `pending` or `unavailable`.
 - **`spatial_photo`**: `ready` if both source photo AND depth map are ready; `processing` if depth/spatial preparation running; `failed` if depth failed; otherwise `unavailable`.
-- **`wireframe`**: `unavailable` (honest placeholder for Phase 06).
-- **`solid3d`**: `unavailable` (honest placeholder for Phase 06/07).
+- **`wireframe`**: `ready` if $\ge 1$ person entity has a reconstructed 3D mesh asset; `processing` if reconstruction running; `failed` if all reconstructions failed; otherwise `unavailable`.
+- **`solid3d`**: `ready` if $\ge 1$ person entity has a reconstructed 3D mesh asset; `processing` if reconstruction running; `failed` if all reconstructions failed; otherwise `unavailable`.
 
 ---
 

@@ -104,6 +104,50 @@ export interface SegmentationInfo {
   error?: string | null;
 }
 
+export interface GeometryMetadata {
+  vertexCount: number;
+  faceCount: number;
+  bounds: {
+    min: [number, number, number];
+    max: [number, number, number];
+  };
+  dimensions: [number, number, number];
+}
+
+export interface ModelProvenance {
+  name: string;
+  version: string;
+  device: string;
+  checkpoint?: string;
+}
+
+export interface CoordinateConvention {
+  up: "+Y";
+  forward: "+Z";
+  right: "+X";
+  units: "meters";
+}
+
+export interface HumanReconstructionData {
+  status: "none" | "pending" | "processing" | "ready" | "failed";
+  meshAssetId?: string | null;
+  meshUrl?: string | null;
+  metadataAssetId?: string | null;
+  modelProvenance?: ModelProvenance;
+  geometryMetadata?: GeometryMetadata;
+  coordinateConvention?: CoordinateConvention;
+  transform?: {
+    position: [number, number, number];
+    rotation: [number, number, number];
+    scale: [number, number, number];
+  };
+  textureAvailability: "none" | "partial" | "full";
+  qualityScore?: number;
+  warnings?: string[];
+  errorMessage?: string | null;
+  reconstructedAt?: string;
+}
+
 export interface SceneEntity {
   id: string;
   entityType: EntityType;
@@ -121,6 +165,7 @@ export interface SceneEntity {
   detection?: DetectionInfo;
   segmentation?: SegmentationInfo;
   depth?: EntityDepthInfo;
+  reconstruction?: HumanReconstructionData;
 }
 
 export type RepresentationStatus = 

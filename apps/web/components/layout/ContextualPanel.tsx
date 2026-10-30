@@ -83,6 +83,10 @@ export const ContextualPanel: React.FC = () => {
     (e) => e.segmentation?.status === "ready"
   ).length;
 
+  const readyMeshesCount = entities.filter(
+    (e) => e.reconstruction?.status === "ready"
+  ).length;
+
   return (
     <aside className={styles.panel} data-testid="contextual-panel">
       {/* Progressive Processing Inspector (Phase 04) */}
@@ -191,6 +195,23 @@ export const ContextualPanel: React.FC = () => {
               {currentScene?.representations?.spatial_photo?.status === "ready"
                 ? "Ready"
                 : "Unavailable"}
+            </span>
+          </div>
+
+          {/* Stage: 3D Human Mesh Reconstruction */}
+          <div className={styles.stageRow} data-testid="stage-row-reconstruction">
+            <span className={styles.stageName}>3D Human Mesh</span>
+            <span
+              className={`${styles.stageStatus} ${
+                styles[
+                  stages.human_reconstruction?.status ||
+                  (readyMeshesCount > 0 ? "completed" : isAnalyzing ? "running" : "pending")
+                ]
+              }`}
+            >
+              {entities.length > 0
+                ? `${readyMeshesCount} of ${entities.length} meshes`
+                : stages.human_reconstruction?.status || "Pending"}
             </span>
           </div>
         </div>
@@ -482,10 +503,67 @@ export const ContextualPanel: React.FC = () => {
                 )}
               </>
             )}
-            <div className={styles.propRow}>
-              <span className={styles.propLabel}>3D Mesh</span>
-              <span className={styles.statusPill}>Phase 06</span>
-            </div>
+            {/* 3D Human Reconstruction info */}
+            {selectedEntity.reconstruction ? (
+              <>
+                <div className={styles.propRow}>
+                  <span className={styles.propLabel}>3D Mesh Status</span>
+                  <span
+                    className={`${styles.statusPill} ${
+                      styles[selectedEntity.reconstruction.status] || ""
+                    }`}
+                    style={{ textTransform: "capitalize" }}
+                    data-testid="reconstruction-status"
+                  >
+                    {selectedEntity.reconstruction.status}
+                  </span>
+                </div>
+                {selectedEntity.reconstruction.geometryMetadata && (
+                  <>
+                    <div className={styles.propRow}>
+                      <span className={styles.propLabel}>Vertices</span>
+                      <span className={styles.propValue} data-testid="reconstruction-vertex-count">
+                        {selectedEntity.reconstruction.geometryMetadata.vertexCount.toLocaleString()}
+                      </span>
+                    </div>
+                    <div className={styles.propRow}>
+                      <span className={styles.propLabel}>Triangles</span>
+                      <span className={styles.propValue} data-testid="reconstruction-face-count">
+                        {selectedEntity.reconstruction.geometryMetadata.faceCount.toLocaleString()}
+                      </span>
+                    </div>
+                    <div className={styles.propRow}>
+                      <span className={styles.propLabel}>Dimensions</span>
+                      <span className={styles.propValue} style={{ fontSize: "10px" }}>
+                        {selectedEntity.reconstruction.geometryMetadata.dimensions
+                          .map((d) => `${d.toFixed(2)}m`)
+                          .join(" × ")}
+                      </span>
+                    </div>
+                  </>
+                )}
+                {selectedEntity.reconstruction.modelProvenance && (
+                  <div className={styles.propRow}>
+                    <span className={styles.propLabel}>Model</span>
+                    <span className={styles.propValue} style={{ fontSize: "10px" }}>
+                      {selectedEntity.reconstruction.modelProvenance.name} (
+                      {selectedEntity.reconstruction.modelProvenance.device})
+                    </span>
+                  </div>
+                )}
+                <div className={styles.propRow}>
+                  <span className={styles.propLabel}>Texture</span>
+                  <span className={styles.propValue} style={{ fontSize: "10px" }}>
+                    Neutral Clay (Geometry only)
+                  </span>
+                </div>
+              </>
+            ) : (
+              <div className={styles.propRow}>
+                <span className={styles.propLabel}>3D Mesh</span>
+                <span className={styles.statusPill}>Not Reconstructed</span>
+              </div>
+            )}
           </div>
         ) : (
           <div className={styles.emptyNotice}>

@@ -108,6 +108,35 @@ export function computeRepresentationAvailability(
     spatialStatus = "pending";
   }
 
+  // 6 & 7. Human Wireframe and Solid 3D Reconstructed Meshes
+  const hasReconstructedMeshes = Boolean(
+    scene?.entities?.some(
+      (e) =>
+        e.reconstruction?.status === "ready" &&
+        Boolean(e.reconstruction?.meshUrl || e.reconstruction?.meshAssetId)
+    )
+  );
+  const isReconstructing =
+    isAnalyzing &&
+    (activeJobStage === "human_reconstruction" ||
+      activeJobStage === "geometry_validation" ||
+      activeJobStage === "mesh_export");
+  const reconstructionFailed = Boolean(
+    scene?.entities?.length &&
+      scene?.entities?.every((e) => e.reconstruction?.status === "failed")
+  );
+
+  let meshStatus: RepresentationStatus = "unavailable";
+  if (hasReconstructedMeshes) {
+    meshStatus = "ready";
+  } else if (reconstructionFailed) {
+    meshStatus = "failed";
+  } else if (isReconstructing) {
+    meshStatus = "processing";
+  } else if (isAnalyzing) {
+    meshStatus = "pending";
+  }
+
   return {
     original: {
       status: originalStatus,
@@ -159,14 +188,28 @@ export function computeRepresentationAvailability(
           : "Requires photo and depth map",
     },
     wireframe: {
-      status: "unavailable",
-      isSelectable: false,
-      reason: "Available in Phase 06: Human Mesh Reconstruction",
+      status: meshStatus,
+      isSelectable: meshStatus === "ready",
+      reason:
+        meshStatus === "ready"
+          ? "Reconstructed 3D human wireframe topology ready"
+          : meshStatus === "processing"
+          ? "Reconstructing human 3D mesh..."
+          : meshStatus === "failed"
+          ? "Human mesh reconstruction failed"
+          : "Requires 3D human mesh reconstruction",
     },
     solid3d: {
-      status: "unavailable",
-      isSelectable: false,
-      reason: "Available in Phase 06/07: Solid 3D Reconstructed Mesh",
+      status: meshStatus,
+      isSelectable: meshStatus === "ready",
+      reason:
+        meshStatus === "ready"
+          ? "Reconstructed 3D human solid shaded mesh ready"
+          : meshStatus === "processing"
+          ? "Reconstructing human 3D mesh..."
+          : meshStatus === "failed"
+          ? "Human mesh reconstruction failed"
+          : "Requires 3D human mesh reconstruction",
     },
   };
 }

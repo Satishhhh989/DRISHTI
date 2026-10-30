@@ -1,6 +1,6 @@
 # DRISHTI Processing Event Contract & Synchronization Protocol
 
-**Version:** 1.2.0 (Phase 04: Live Visualization & Progressive Processing Engine)
+**Version:** 1.3.0 (Phase 05: AI Human 3D Reconstruction Engine)
 
 ## 1. Overview
 
@@ -29,7 +29,7 @@ The backend processing pipeline emits typed, strictly-sequenced events as operat
 | Event Type | Trigger Condition |
 |---|---|
 | `job_accepted` | A new background processing job has been registered and enqueued. |
-| `stage_started` | A pipeline stage (e.g. `person_detection`) has begun execution. |
+| `stage_started` | A pipeline stage (e.g. `person_detection`, `human_reconstruction`) has begun execution. |
 | `progress_updated` | Incremental progress (0.0 to 1.0) reported within an active stage. |
 | `intermediate_result_available` | An intermediate asset or metadata item has been produced. |
 | `asset_ready` | A pipeline asset (e.g. mask, mesh, depth map) is stored and available. |
@@ -40,24 +40,25 @@ The backend processing pipeline emits typed, strictly-sequenced events as operat
 
 ---
 
-## 3. Phase 03 Pipeline Stages
+## 3. Phase 05 Pipeline Stages
 
-The Phase 03 Depth Estimation & Spatial Photography pipeline runs 12 sequential stages:
+The Phase 05 pipeline executes 13 sequential stages:
 
 | Stage Identifier | Progress Weight | Description |
 |---|---|---|
-| `image_validation` | 8% | Validates file format, checks against decompression bombs, ensures integrity. |
-| `image_preparation` | 15% | Resolves local path, normalizes EXIF orientation, extracts dimensions. |
-| `person_detection` | 30% | Runs local YOLOv8 neural network inference to isolate person bounding boxes. |
-| `detection_validation` | 38% | Filters low-confidence detections, validates coordinates, assigns entity IDs. |
-| `instance_segmentation` | 50% | Generates individual instance masks and resizes to native photo resolution. |
-| `mask_validation` | 58% | Verifies binary mask boundaries, calculates pixel area and coverage statistics. |
-| `depth_estimation` | 72% | Executes Depth Anything V2 Small monocular depth estimation across the scene. |
-| `depth_normalization` | 80% | Robust 2nd/98th percentile clamping and inversion to canonical proximity $[0, 1]$. |
-| `depth_association` | 86% | Computes per-entity median/min/max proximity stats using segmentation masks. |
-| `spatial_photo_preparation` | 90% | Prepares 3D spatial mesh displacement properties and parallax camera boundaries. |
-| `asset_persistence` | 95% | Encodes and writes PNG masks, `.npy` raw depth arrays, and grayscale PNG visualizations. |
-| `scene_update` | 98% | Atomically updates the scene graph with entities, depth metadata, and spatial representations. |
+| `image_validation` | 6% | Validates file format, checks against decompression bombs, ensures integrity. |
+| `image_preparation` | 12% | Resolves local path, normalizes EXIF orientation, extracts dimensions. |
+| `person_detection` | 24% | Runs local YOLOv8 neural network inference to isolate person bounding boxes. |
+| `detection_validation` | 32% | Filters low-confidence detections, validates coordinates, assigns entity IDs. |
+| `instance_segmentation` | 42% | Generates individual instance masks and resizes to native photo resolution. |
+| `mask_validation` | 50% | Verifies binary mask boundaries, calculates pixel area and coverage statistics. |
+| `depth_estimation` | 62% | Executes Depth Anything V2 Small monocular depth estimation across the scene. |
+| `depth_normalization` | 70% | Robust 2nd/98th percentile clamping and inversion to canonical proximity $[0, 1]$. |
+| `depth_association` | 76% | Computes per-entity median/min/max proximity stats using segmentation masks. |
+| `spatial_photo_preparation` | 82% | Prepares 3D spatial mesh displacement properties and parallax camera boundaries. |
+| `human_reconstruction` | 92% | Reconstructs 3D volumetric human meshes via local SPIN + SMPL LBS forward layer. |
+| `asset_persistence` | 96% | Encodes and writes PNG masks, `.npy` raw depth arrays, depth PNGs, and GLB meshes. |
+| `scene_update` | 98% | Atomically updates the scene graph with entities, depth metadata, spatial representations, and mesh paths. |
 | `completed` | 100% | Emits final `job_completed` event and notifies clients. |
 
 ---
@@ -87,7 +88,7 @@ interface ProcessingEvent {
 ## 5. Event Flow Example
 
 1. **Client Triggers Analysis**:
-   `POST /api/v1/pipeline/analyze` with `{ "sceneId": "...", "assetId": "...", "includeDepth": true }`
+   `POST /api/v1/pipeline/analyze` with `{ "sceneId": "...", "assetId": "...", "includeDepth": true, "includeReconstruction": true }`
    Response: `{ "jobId": "...", "status": "accepted" }`
 2. **Seq #1 (`job_accepted`)**: Job registered with sequence `1`.
 3. **Seq #2 (`stage_started`)**: `image_validation` begins.
@@ -107,7 +108,9 @@ interface ProcessingEvent {
 17. **Seq #17 (`stage_started`)**: `depth_association` associating depths to entities.
 18. **Seq #18 (`stage_completed`)**: Depth associated with 2 entities.
 19. **Seq #19 (`stage_started`)**: `spatial_photo_preparation` configured mesh and camera bounds.
-20. **Seq #20 (`asset_ready`)**: Depth map `.npy` saved.
-21. **Seq #22 (`asset_ready`)**: Depth visualization `.png` saved.
-22. **Seq #23 (`stage_completed`)**: Scene updated.
-23. **Seq #24 (`job_completed`)**: Pipeline complete.
+20. **Seq #20 (`stage_started`)**: `human_reconstruction` running SPIN + SMPL LBS for 2 people.
+21. **Seq #21 (`asset_ready`)**: 3D GLB mesh saved for `person-001` (6,890 vertices, 13,776 faces).
+22. **Seq #22 (`asset_ready`)**: 3D GLB mesh saved for `person-002` (6,890 vertices, 13,776 faces).
+23. **Seq #23 (`stage_completed`)**: 3D human reconstruction completed for 2 persons.
+24. **Seq #24 (`stage_completed`)**: Scene updated.
+25. **Seq #25 (`job_completed`)**: Pipeline complete.

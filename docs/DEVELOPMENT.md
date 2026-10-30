@@ -25,6 +25,7 @@ bash scripts/setup.sh
 DRISHTI relies on local neural network models stored in `data/models/`:
 1. **YOLOv8 Nano Segmentation** (`yolov8n-seg.pt`, ~6.7MB): Fast person detection and binary instance segmentation.
 2. **Depth Anything V2 Small** (`depth-anything-v2-small/`, ~99.2MB Safetensors): High-resolution monocular relative depth estimation.
+3. **SPIN Human Mesh Reconstruction** (`human_reconstruction/spin_model_checkpoint.pth.tar`, ~103MB + `human_reconstruction/SMPL_N_model.npz`, ~88MB): Parametric 3D human mesh estimation and SMPL neutral body linear blend skinning.
 
 Check model status or trigger local download via the API:
 
@@ -61,13 +62,13 @@ bash scripts/test.sh
 ```
 
 This executes:
-1. `packages/scene-schema`: Vitest schema validation, representation availability, and contract tests (9 tests).
+1. `packages/scene-schema`: Vitest schema validation, representation availability, and contract tests (10 tests).
 2. `packages/shared-types`: Vitest event contract and DTO tests (2 tests).
-3. `apps/web`: Vitest component, store, event reducer, and visualization tests (22 tests).
-4. `services/api`: Pytest backend test suite (unit tests, mock pipeline, real model MPS smoke tests, and progressive event stream tests) (48 tests).
-5. `tests/e2e`: Playwright browser-level end-to-end tests (8 tests).
+3. `apps/web`: Vitest component, store, event reducer, 3D mesh rendering, and visualization tests (23 tests).
+4. `services/api`: Pytest backend test suite (unit tests, mock pipeline, real model MPS smoke tests, geometry validation, and progressive event stream tests) (59 tests).
+5. `tests/e2e`: Playwright browser-level end-to-end tests (9 tests).
 
-**Total Verified Tests: 89 passing.**
+**Total Verified Tests: 103 passing.**
 
 ### Running Individual Test Suites
 
@@ -110,6 +111,7 @@ DRISHTI exposes dedicated endpoints for inspecting hardware acceleration, pipeli
 | `POST` | `/api/v1/jobs/{job_id}/cancel` | Cooperatively cancels an active job without discarding already produced assets. |
 | `GET` | `/api/v1/assets/masks/{filename}` | Serves individual 8-bit binary PNG segmentation masks. |
 | `GET` | `/api/v1/assets/depth/{filename}` | Serves 8-bit grayscale depth visualization PNGs. |
+| `GET` | `/api/v1/assets/meshes/{filename}` | Serves binary GLTF (.glb) 3D human meshes. |
 | `GET` | `/api/v1/assets/photos/{filename}` | Serves sanitized original user photographs. |
 
 ---

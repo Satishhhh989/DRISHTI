@@ -35,6 +35,7 @@ export type PipelineStageIdentifier =
   | "scene_update"
   | "completed"
   | "mesh_reconstruction"
+  | "human_reconstruction"
   | "skeleton_fitting"
   | "animation_preparation"
   | "scene_assembly";

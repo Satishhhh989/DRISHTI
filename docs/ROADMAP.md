@@ -8,8 +8,8 @@
 | **Phase 02** | **Image Intelligence & Person Segmentation** | **COMPLETED** | Local multi-person detection (YOLOv8), instance segmentation (8-bit binary PNG masks), hardware-accelerated inference (Apple Silicon MPS / CUDA), 3D viewport overlays, entity inspector, sequenced event streaming. |
 | **Phase 03** | **Depth Estimation & Spatial Photography** | **COMPLETED** | Local monocular depth estimation (Depth Anything V2), canonical relative proximity $[0, 1]$, robust percentile normalization, per-person depth statistics, 3D vertex displacement mesh, bounded parallax camera controls. |
 | **Phase 04** | **Live Visualization & Progressive Processing Engine** | **COMPLETED** | Server-Sent Events (SSE) streaming, bounded event retention (500 FIFO), idempotent event reducer, progressive visual reveals (instant photo, detection boxes, per-person masks, depth map, spatial photo), live pipeline inspector, job cancellation, non-fatal partial failure isolation. |
-| **Phase 05** | **Multiplane Spatial Photography & Background Separation** | **PLANNED** | High-resolution matting boundary refinement, foreground extraction, depth-guided hole filling, background inpainting, and layered multiplane 2.5D parallax spatial photo rendering. |
-| **Phase 06** | **3D Human Mesh Reconstruction** | Planned | Volumetric human mesh generation producing genuine 3D polygon geometry and wireframes. |
+| **Phase 05** | **AI Human 3D Reconstruction Engine** | **COMPLETED** | Local parametric 3D human mesh reconstruction (SPIN + SMPL LBS forward layer), standard topology (6,890 vertices, 13,776 faces), geometry validation, binary GLTF (.glb) export with neutral studio clay PBR material, Three.js wireframe and solid 3D rendering with 360-degree inspection, multi-person partial failure resilience. |
+| **Phase 06** | **Multi-Person 3D Scene Assembly & Kinematic Skeleton Fitting** | **PLANNED** | Multi-person spatial scene assembly, relative depth & scale positioning, occlusion reconciliation, and 3D kinematic skeleton fitting. |
 | **Phase 07** | **Texture & Material Synthesis** | Planned | High-fidelity texture mapping with unseen-surface inpainting and PBR shaders. |
 | **Phase 08** | **Human Skeleton & Rigging** | Planned | 3D kinematic skeleton fitting and skinning weight attachment for human subjects. |
 | **Phase 09** | **Scene Assembly & Animation** | Planned | Interactive 3D scene compositing with independent character animation controls. |
@@ -17,32 +17,27 @@
 
 ---
 
-## Current Status: Phase 04 Completed
+## Current Status: Phase 05 Completed
 
-Phase 04 transforms DRISHTI from an opaque batch processor into a live, transparent, progressive reconstruction engine:
-- **Server-Sent Events (SSE) Push Architecture**: High-efficiency unidirectional `GET /api/v1/jobs/{job_id}/stream` endpoint delivering real-time processing events directly to the frontend with sub-millisecond latency.
-- **Bounded Event Retention Buffer**: Thread-safe FIFO ring buffer capped at 500 events per job preventing memory bloat during long sessions while allowing seamless reconnection replay.
-- **Progressive Scene Commits**: Coordinator commits intermediate results to the authoritative scene manager at each milestone (image validation, detection completion, per-person mask persistence, depth calculation), enabling live queries mid-pipeline.
-- **Pure Idempotent Event Reducer (`reduceProcessingEvent`)**: Deterministic client-side state machine ensuring identical scene state regardless of network packet chunking or replay order, while strictly preserving active camera coordinates, selection state, and viewport modes.
-- **Granular Representation Availability (`computeRepresentationAvailability`)**: Dynamic status tracking across all 7 scene representations (`unavailable | pending | processing | ready | failed`) with live badges (`LIVE`, `ERR`, `P06`).
-- **Progressive Viewport Reveal**:
-  - Original photographic plane appears immediately upon image validation.
-  - 3D detection bounding boxes render the instant person detection completes.
-  - Segmentation masks appear progressively as each person's mask is saved to disk and committed.
-  - Depth map visualization unlocks dynamically as soon as relative proximity computation concludes.
-  - Spatial photo vertex displacement surface activates seamlessly when depth and photo assets are verified.
-  - Advanced wireframe and mesh representations remain cleanly disabled with honest explanatory messages until implemented in Phase 06.
-- **Live Pipeline Inspector**: Contextual panel displaying stage-by-stage progression, entity counters ("3 of 5 people segmented"), and real-time step statuses (`pending | running | complete | failed`).
-- **Cooperative Job Cancellation**: Clean cancellation via `POST /api/v1/jobs/{job_id}/cancel` and frontend "Cancel Analysis" button, terminating background thread processing cleanly while preserving completed intermediate assets.
-- **Non-Fatal Partial Failure Isolation**: Gracefully isolates failures (e.g. depth estimation failure), recording warnings while preserving interactive detection and segmentation results.
-- **Automated Verification**: **89 automated tests passing** across 5 test suites (48 pytest backend tests, 33 vitest frontend and schema tests, 8 Playwright browser E2E tests).
+Phase 05 establishes genuine local 3D human mesh reconstruction from photographs:
+- **Local Model Architecture**: Integrates SPIN (SMPL Optimization in the Loop of Neural Networks, Kolotouros et al., ICCV 2019) with a ResNet-50 backbone and iterative 6D parameter regressor.
+- **Pure PyTorch SMPL Linear Blend Skinning (LBS)**: Eliminates legacy C++ and `chumpy` dependencies, performing canonical template deformation, PCA shape blending ($\beta$), and joint kinematic rotation in pure PyTorch running on Apple Silicon MPS / CUDA / CPU.
+- **Parametric 3D Geometry**: Reconstructs standardized anatomical meshes with 6,890 vertices and 13,776 triangular faces.
+- **Geometry Validation & Sanitization**: Strict checks for NaN/infinite values, degenerate zero-area faces, index boundary validity, vertex normal computation, and real-world human bounds ($[0.2\text{m}, 2.6\text{m}]$).
+- **Binary GLTF (.glb) Assets**: Exports binary GLTF models stored under `data/storage/meshes/{scene_id}_{entity_id}.glb` with neutral studio clay PBR material (`#d0d0d8`, roughness 0.65).
+- **Interactive Three.js Viewport**:
+  - `wireframe`: Renders authentic polygon wireframe topology in technical cyan/white lines.
+  - `solid3d`: Renders solid clay meshes with studio lighting and raycast selection highlight.
+  - 360-degree orbit, pan, zoom, and camera reset controls.
+- **Multi-Person & Fault-Tolerant Pipeline**: Independent per-person crop preparation with aspect-ratio letterboxing, safe padding, and clipping boundary detection. Non-fatal isolation guarantees failure of one person does not abort other people.
+- **Full Test Coverage**: **103 automated tests passing** across 5 test suites (59 pytest backend tests, 35 vitest frontend and schema tests, 9 Playwright browser E2E tests).
 
 ---
 
-## Next Mission: Phase 05 — Multiplane Spatial Photography & Background Separation
+## Next Mission: Phase 06 — Multi-Person 3D Scene Assembly & Kinematic Skeleton Fitting
 
-Phase 05 will focus on:
-1. High-resolution alpha matting refinement along fine boundaries (hair, clothing edges).
-2. Foreground person extraction and layer composition.
-3. Background inpainting and depth-guided hole filling to fill occlusion voids behind detected persons.
-4. Independent foreground and background plane separation in 3D space with clean multiplane parallax.
+Phase 06 will focus on:
+1. Multi-person spatial positioning and relative depth scaling in 3D scene coordinates.
+2. Ground plane alignment and contact resolution.
+3. Multi-person occlusion reconciliation and depth-consistent sorting.
+4. Kinematic skeleton extraction and joint hierarchy fitting for reconstructed meshes.

@@ -21,8 +21,8 @@ const MODES: ModeOption[] = [
   { id: "segmentation", label: "Segmentation", testId: "mode-segmentation" },
   { id: "depth", label: "Depth Map", testId: "mode-depth" },
   { id: "spatial_photo", label: "Spatial Photo", testId: "mode-spatial-photo" },
-  { id: "wireframe", label: "Wireframe", badge: "P06", testId: "mode-wireframe" },
-  { id: "solid3d", label: "3D Solid", badge: "P06", testId: "mode-solid3d" },
+  { id: "wireframe", label: "Wireframe", testId: "mode-wireframe" },
+  { id: "solid3d", label: "3D Solid", testId: "mode-solid3d" },
 ];
 
 export const RepresentationSelector: React.FC = () => {

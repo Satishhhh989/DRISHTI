@@ -7,9 +7,12 @@ from pydantic import BaseModel
 from typing import Optional
 
 from app.assets.manager import asset_manager
+from app.assets.storage import sanitize_filename
+from app.core.errors import NotFoundError
 from app.scene.manager import scene_manager
 from app.schemas.assets import AssetMetadata
 from app.schemas.scene import Scene
+from pathlib import Path
 
 router = APIRouter(prefix="/assets", tags=["Assets"])
 
@@ -58,5 +61,18 @@ async def get_asset_file(asset_id: str):
         path=str(file_path),
         media_type=meta.mime_type,
         filename=meta.filename
+    )
+
+
+@router.get("/meshes/{filename}")
+async def get_mesh_file(filename: str):
+    safe_name = sanitize_filename(filename)
+    path = asset_manager.store._resolve_safe_path(Path("meshes") / safe_name)
+    if not path.exists():
+        raise NotFoundError(f"Mesh '{filename}' not found.")
+    return FileResponse(
+        path=str(path),
+        media_type="model/gltf-binary",
+        filename=safe_name
     )
 

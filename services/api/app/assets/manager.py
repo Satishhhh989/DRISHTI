@@ -28,6 +28,22 @@ class AssetManager:
             scene_id=scene_id
         )
 
+    def register_mesh(
+        self,
+        content: bytes,
+        filename: str,
+        scene_id: str,
+        entity_id: Optional[str] = None
+    ) -> AssetMetadata:
+        return self.store.store_file(
+            content=content,
+            category="mesh",
+            original_filename=filename,
+            mime_type="model/gltf-binary",
+            scene_id=scene_id,
+            entity_id=entity_id
+        )
+
     def register_pipeline_asset(
         self,
         content: bytes,

@@ -44,6 +44,15 @@ MODEL_CATALOG: Dict[str, Dict[str, Any]] = {
         "license": "Apache-2.0",
         "task": "depth-estimation",
     },
+    "spin-human-reconstruction": {
+        "dir_name": "human_reconstruction",
+        "filename": "human_reconstruction/spin_model_checkpoint.pth.tar",
+        "category": "human_reconstruction",
+        "description": "SPIN (SMPL Optimization in the Loop of Neural Networks) + SMPL Neutral LBS",
+        "size_mb": 191.0,
+        "license": "SPIN: MIT; SMPL: Non-Commercial Research License (MPI)",
+        "task": "human-mesh-recovery",
+    },
 }
 
 
@@ -98,6 +107,36 @@ class ModelManager:
         if dest_path.exists() and dest_path.stat().st_size > 1000:
             logger.info(f"Model '{model_key}' already cached at {dest_path}")
             return dest_path
+
+        if model_key == "spin-human-reconstruction":
+            from huggingface_hub import hf_hub_download
+            target_dir = self.models_dir / meta["dir_name"]
+            target_dir.mkdir(parents=True, exist_ok=True)
+            logger.info(f"Downloading SPIN & SMPL assets to {target_dir}...")
+            
+            # 1. Download spin_model_checkpoint.pth.tar
+            p1 = hf_hub_download(repo_id="camenduru/VIBE", filename="spin_model_checkpoint.pth.tar")
+            dest_ckpt = target_dir / "spin_model_checkpoint.pth.tar"
+            if not dest_ckpt.exists():
+                import shutil
+                shutil.copyfile(p1, dest_ckpt)
+
+            # 2. Download smpl_mean_params.npz
+            p2 = hf_hub_download(repo_id="camenduru/VIBE", filename="smpl_mean_params.npz")
+            dest_mean = target_dir / "smpl_mean_params.npz"
+            if not dest_mean.exists():
+                import shutil
+                shutil.copyfile(p2, dest_mean)
+
+            # 3. Download SMPL_N_model.npz
+            p3 = hf_hub_download(repo_id="lithiumice/models_hub", filename="4_SMPLhub/SMPL/X_model_npz/SMPL_N_model.npz")
+            dest_smpl = target_dir / "SMPL_N_model.npz"
+            if not dest_smpl.exists():
+                import shutil
+                shutil.copyfile(p3, dest_smpl)
+
+            logger.info(f"SPIN model and SMPL assets saved to {target_dir}")
+            return dest_ckpt
 
         if "hf_model_id" in meta:
             hf_id = meta["hf_model_id"]
