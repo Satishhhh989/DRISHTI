@@ -289,6 +289,12 @@ class SceneRepresentations(BaseModel):
     solid3d: RepresentationAsset = Field(
         default_factory=lambda: RepresentationAsset(status="unavailable")
     )
+    articulated: RepresentationAsset = Field(
+        default_factory=lambda: RepresentationAsset(status="unavailable")
+    )
+    combined: RepresentationAsset = Field(
+        default_factory=lambda: RepresentationAsset(status="unavailable")
+    )
 
 
 class SourceImageMetadata(BaseModel):

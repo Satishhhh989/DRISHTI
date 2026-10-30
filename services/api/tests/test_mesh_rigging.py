@@ -112,3 +112,4 @@ def test_smpl_native_rigging_if_model_present():
     assert rig.status == "rigged"
     assert rig.skinning_method == "smpl_lbs_native"
     assert rig.weights_normalized is True
+

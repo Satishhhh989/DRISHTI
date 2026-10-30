@@ -289,7 +289,12 @@ export type RepresentationStatus =
   | "ready" 
   | "failed";
 
-export type RepresentationMode = "photo" | "wireframe" | "solid3d";
+export type RepresentationMode =
+  | "photo"
+  | "wireframe"
+  | "solid3d"
+  | "articulated"
+  | "combined";
 
 export type VisualizationMode =
   | "original"
@@ -298,7 +303,30 @@ export type VisualizationMode =
   | "depth"
   | "spatial_photo"
   | "wireframe"
-  | "solid3d";
+  | "solid3d"
+  | "articulated"
+  | "combined";
+
+export type RepresentationCategory =
+  | "2d_photo"
+  | "spatial_photo"
+  | "inspection"
+  | "3d_mesh"
+  | "hybrid";
+
+export interface RepresentationRegistryEntry {
+  id: VisualizationMode;
+  displayName: string;
+  category: RepresentationCategory;
+  requiredAssets: string[];
+  supportedSceneTypes: string[];
+  loadingBehavior: "instant" | "progressive";
+  renderingBehavior: string;
+  knownLimitations: string[];
+  supportsSelection: boolean;
+  supportsInteraction: boolean;
+  supportsAnimation: boolean;
+}
 
 export interface DepthNormalizationMetadata {
   method: "percentile_clamped";
@@ -359,6 +387,8 @@ export interface SceneRepresentations {
   spatial_photo: RepresentationAsset;
   wireframe: RepresentationAsset;
   solid3d: RepresentationAsset;
+  articulated?: RepresentationAsset;
+  combined?: RepresentationAsset;
 }
 
 export interface SourceImageMetadata {

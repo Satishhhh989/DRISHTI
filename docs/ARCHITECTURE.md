@@ -82,22 +82,41 @@ The project is structured as a pnpm workspace:
 
 ---
 
-## 2. Frontend Architecture (Phase 06)
+## 2. Frontend Architecture & Unified Hybrid Renderer (Phase 08)
 
-### 2.1 UI Layer
-The UI provides an interactive workspace focused on the 3D viewport:
-- **TopBar**: Identity (`DRISHTI`), phase badge (`Phase 06`), backend connectivity status indicator, grid floor toggle, "Fit Scene" button to frame all assembled subjects, camera reset button, and file upload trigger.
-- **ThreeViewport**: React Three Fiber canvas with WebGL renderer, perspective camera, ambient & directional lighting, 3D coordinate floor grid ($Y = 0$), and camera controls.
-- **Representation & Visualization Selector**: Available modes: `Original`, `Detection`, `Segmentation`, `Depth Map`, `Spatial Photo`, `Wireframe`, `Solid 3D`. Wireframe and Solid 3D representations render the fully assembled multi-person 3D scene.
-- **HumanMeshLayer (`HumanMeshLayer.tsx`)**: Renders the complete assembled multi-person scene:
-  - *Reconstructed Subjects*: Loaded from binary GLTF meshes and positioned at their computed scene-space transforms.
-  - *Unreconstructed Subjects*: Displayed honestly as distinct in-scene volumetric wireframe markers with status indicators, preventing subjects from vanishing.
-  - *Per-Entity Visibility*: Toggling visibility hides the subject without deleting the entity or its transform.
-  - *Wireframe Mode*: Highlights genuine polygon edge topology in technical cyan/white lines.
-  - *Solid 3D Mode*: Renders neutral studio clay PBR material (`#d0d0d8`, roughness 0.65, metalness 0.05).
-  - *Entity Selection*: Raycasting allows clicking on any person in the 3D scene to highlight them and inspect their placement metadata.
-- **Progressive Processing Inspector (`ContextualPanel.tsx`)**:
-  - *Pipeline Inspector*: Real-time stage rows including `Image Validation`, `Person Detection`, `Segmentation`, `Scene Depth`, `Spatial Photo`, `3D Human Mesh`, and `Scene Assembly`.
+### 2.1 UI Layer & Representation System
+The UI provides an interactive workspace centered on a unified rendering architecture:
+- **TopBar**: Identity (`DRISHTI`), phase badge (`Phase 08`), backend connectivity status indicator, grid floor toggle, "Fit Scene" button, camera reset button, and file upload trigger.
+- **Representation Registry (`packages/scene-schema/src/registry.ts`)**:
+  - Central source of truth for all 9 supported representations:
+    1. `original`: Original source photograph (2D photographic aspect ratio preserved without geometric warping).
+    2. `detection`: 2D bounding boxes with person label tags and detection confidences.
+    3. `segmentation`: Per-person 8-bit alpha instance masks projected over photograph.
+    4. `depth`: Normalized grayscale relative depth map $[0.0, 1.0]$.
+    5. `spatial_photo`: 128x128 vertex-displaced mesh surface with restrained parallax orbit.
+    6. `wireframe`: Genuine reconstructed polygon mesh wireframe topology.
+    7. `solid3d`: Reconstructed mesh with neutral studio clay material under 3-point lighting.
+    8. `articulated`: Rigged mesh with 24-joint kinematic skeleton overlay and procedural animation tracks.
+    9. `combined`: Hybrid spatial composition rendering assembled 3D characters in front of an upright photographic reference plane.
+- **Unified Asset Cache (`apps/web/lib/asset-cache.ts`)**:
+  - Deduplicated in-memory template caching for GLTF models (`.glb`) and Three.js textures.
+  - Eliminates duplicate network requests and re-parsing when switching between representations.
+  - Reuses underlying geometry buffers across solid, wireframe, articulated, and combined views.
+  - Explicit resource disposal on scene change or unmount via `assetCache.disposeAll()`.
+- **HumanMeshLayer (`HumanMeshLayer.tsx`)**:
+  - Unified 3D mesh presentation supporting `wireframe`, `solid3d`, `articulated`, and `combined` modes.
+  - Reconstructed characters positioned via authoritative scene-space transforms ($T_{\text{scene}}$).
+  - Unreconstructed characters displayed honestly as 3D wireframe bounding indicators.
+  - Integrated `SkeletonOverlay` displaying 24 joint spheres (pelvis in amber `#f59e0b`, limbs in emerald `#10b981`) and 23 bone line segments with X-ray depth testing.
+- **Photographic & Combined Reference Plane (`PhotoPlane.tsx`)**:
+  - In 2D/inspection modes, renders photograph or depth map at $Z = 0$.
+  - In `combined` mode, renders as an upright photographic reference plane at $Z = -0.6\text{m}$ (85% opacity, slate boundary `#6366f1`), documenting the spatial correlation between the original photo and the assembled 3D characters.
+- **Camera & Navigation Contract (`CameraController.tsx`)**:
+  - **2D Navigation**: Used in `original`, `detection`, `segmentation`, `depth`; rotation locked to face plane frontally, permitting pure pan and zoom without accidental 3D tilting.
+  - **3D Navigation**: Used in `wireframe`, `solid3d`, `articulated`, `combined`; unconstrained 360-degree orbit, pan, zoom, fit-to-scene, and focus-on-person.
+  - **Restrained Parallax Navigation**: Used in `spatial_photo`; azimuth locked to $\pm 18^\circ$ and polar $75^\circ \text{--} 105^\circ$ to minimize disocclusion voids.
+  - **Camera State Preservation**: Switching between 3D representations (`solid3d` $\leftrightarrow$ `wireframe` $\leftrightarrow$ `articulated` $\leftrightarrow$ `combined`) **preserves** the user's active camera position, target, and zoom level.
+  - **Fit-to-View**: In 2D mode, computes exact distance to fit the photo plane dimensions ($W, H$) into camera FOV with comfortable padding; in 3D mode, frames visible entities using actual mesh bounding dimensions.
   - *Detected People List*: Per-entity visibility toggle button (show/hide), status tag (`Mesh` vs `In-Scene`), and detection confidence.
   - *Entity Inspector*: Displays 3D Mesh Status, Vertex & Face counts, Bounding Dimensions, Model Provenance, Texture Status, 3D Scene Placement Method (`Depth-Projected Composition`), Scene Coordinates $(X, Y, Z)$, Depth Source, Visibility, Uncertainty Flags, and "Focus Camera on Person" action.
 - **CameraController (`CameraController.tsx`)**: Smooth OrbitControls with damping ($0.06$), camera reset, "Fit Scene" bounding box framing, and "Focus on Person" centering.

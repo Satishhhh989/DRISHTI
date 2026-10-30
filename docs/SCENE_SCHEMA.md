@@ -347,12 +347,16 @@ DRISHTI provides multiple visualization layers in the viewport:
 5. **`spatial_photo`**: Interactive 3D mesh surface with vertex displacement and bounded parallax camera.
 6. **`wireframe`**: Reconstructed 3D polygon geometry showing genuine model topology lines (unlocked in Phase 05).
 7. **`solid3d`**: Solid reconstructed 3D human meshes with neutral studio clay PBR material (unlocked in Phase 05).
+8. **`articulated`**: Rigged 3D human meshes with 24-joint kinematic skeleton overlay and procedural animation tracks (unlocked in Phase 07).
+9. **`combined`**: Hybrid spatial scene composition placing assembled 3D characters in front of an upright photographic reference plane (unlocked in Phase 08).
 
 Scene representations tracked in `SceneRepresentations`:
 - `photo`: `ready` when an image is loaded.
 - `spatial_photo`: `ready` when depth estimation has successfully computed.
 - `wireframe`: `ready` when one or more human entities have reconstructed 3D meshes.
 - `solid3d`: `ready` when one or more human entities have reconstructed 3D meshes.
+- `articulated`: `ready` when one or more reconstructed entities have valid rigs and skeletons.
+- `combined`: `ready` when both source photo and 3D human meshes are available.
 
 ### 7.1 Representation Availability Model (`computeRepresentationAvailability`)
 
@@ -364,6 +368,8 @@ Availability of each viewport visualization mode is dynamically calculated using
 - **`spatial_photo`**: `ready` if both source photo AND depth map are ready; `processing` if depth/spatial preparation running; `failed` if depth failed; otherwise `unavailable`.
 - **`wireframe`**: `ready` if $\ge 1$ person entity has a reconstructed 3D mesh asset; `processing` if reconstruction running; `failed` if all reconstructions failed; otherwise `unavailable`.
 - **`solid3d`**: `ready` if $\ge 1$ person entity has a reconstructed 3D mesh asset; `processing` if reconstruction running; `failed` if all reconstructions failed; otherwise `unavailable`.
+- **`articulated`**: `ready` if $\ge 1$ reconstructed entity has a valid rig and skeleton; `processing` if rigging/fitting running; otherwise `unavailable`.
+- **`combined`**: `ready` if source photo is loaded AND $\ge 1$ reconstructed 3D mesh exists; `processing` if scene assembly running; otherwise `unavailable`.
 
 ---
 

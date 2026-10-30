@@ -811,6 +811,10 @@ class PipelineCoordinator:
                             status="ready",
                             updated_at=datetime.now(timezone.utc).isoformat(),
                         )
+                        scene.representations.combined = RepresentationAsset(
+                            status="ready",
+                            updated_at=datetime.now(timezone.utc).isoformat(),
+                        )
                         scene_manager.update_scene(scene)
 
                     event_emitter.emit(
@@ -1027,6 +1031,11 @@ class PipelineCoordinator:
                         error_message=str(rig_err),
                     )
 
+            if successful_rigs > 0:
+                scene.representations.articulated = RepresentationAsset(
+                    status="ready",
+                    updated_at=datetime.now(timezone.utc).isoformat(),
+                )
             scene_manager.update_scene(scene)
 
             event_emitter.emit(

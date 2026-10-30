@@ -1,6 +1,7 @@
 "use client";
 
 import React from "react";
+import { getRepresentationEntry } from "@photo-to-3d/scene-schema";
 import { useSceneStore } from "@/stores/scene-store";
 import { useUIStore } from "@/stores/ui-store";
 import { apiClient } from "@/lib/api-client";
@@ -10,6 +11,7 @@ const PALETTE_CSS = ["#3b82f6", "#10b981", "#f59e0b", "#8b5cf6", "#ec4899", "#06
 
 export const ContextualPanel: React.FC = () => {
   const currentScene = useSceneStore((state) => state.currentScene);
+  const visualizationMode = useSceneStore((state) => state.visualizationMode);
   const photoDimensions = useSceneStore((state) => state.photoDimensions);
   const isAnalyzing = useSceneStore((state) => state.isAnalyzing);
   const currentStageMessage = useSceneStore((state) => state.currentStageMessage);
@@ -373,6 +375,26 @@ export const ContextualPanel: React.FC = () => {
                 {currentScene.processingStatus}
               </span>
             </div>
+            <div className={styles.propRow}>
+              <span className={styles.propLabel}>Active Mode</span>
+              <span className={styles.propValue} data-testid="active-representation-name">
+                {getRepresentationEntry(visualizationMode).displayName}
+              </span>
+            </div>
+            <div className={styles.propRow}>
+              <span className={styles.propLabel}>Mode Category</span>
+              <span className={styles.propValue} style={{ textTransform: "capitalize", fontSize: "10px" }}>
+                {getRepresentationEntry(visualizationMode).category.replace("_", " ")}
+              </span>
+            </div>
+            {getRepresentationEntry(visualizationMode).knownLimitations.length > 0 && (
+              <div
+                style={{ marginTop: "4px", fontSize: "9px", color: "#71717a", lineHeight: "1.3" }}
+                data-testid="active-representation-limitation"
+              >
+                ℹ️ {getRepresentationEntry(visualizationMode).knownLimitations[0]}
+              </div>
+            )}
           </>
         ) : (
           <div className={styles.emptyNotice}>No active scene loaded.</div>

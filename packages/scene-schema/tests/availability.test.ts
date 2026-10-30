@@ -199,6 +199,39 @@ describe("computeRepresentationAvailability", () => {
     expect(availability.wireframe.isSelectable).toBe(true);
     expect(availability.solid3d.status).toBe("ready");
     expect(availability.solid3d.isSelectable).toBe(true);
+    expect(availability.combined.status).toBe("ready");
+    expect(availability.combined.isSelectable).toBe(true);
+    expect(availability.articulated.status).toBe("unavailable");
+
+    // When rigging and skeleton are attached, articulated becomes ready
+    scene.entities[0].skeleton = {
+      id: "skel-001",
+      entityId: "person-001",
+      schemaVersion: "1.0.0",
+      rootJointId: "pelvis",
+      joints: [],
+      bones: [],
+      coordinateConvention: { up: "+Y", forward: "+Z", right: "+X", units: "meters" },
+      source: "smpl_regressed",
+      isAligned: true,
+      validationStatus: "valid",
+      validationErrors: [],
+      createdAt: new Date().toISOString(),
+    };
+    scene.entities[0].rig = {
+      id: "rig-001",
+      entityId: "person-001",
+      skeletonId: "skel-001",
+      status: "rigged",
+      skinningMethod: "smpl_lbs_native",
+      boneCount: 24,
+      maxInfluencesPerVertex: 4,
+      weightsNormalized: true,
+    };
+
+    const articulatedAvail = computeRepresentationAvailability(scene, null, false);
+    expect(articulatedAvail.articulated.status).toBe("ready");
+    expect(articulatedAvail.articulated.isSelectable).toBe(true);
   });
 });
 

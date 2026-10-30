@@ -1,11 +1,11 @@
 import { test, expect } from "@playwright/test";
 
-test.describe("Phase 01 - 07: Workspace & Viewport E2E Verification", () => {
+test.describe("Phase 01 - 08: Workspace & Viewport E2E Verification", () => {
   test("1. The application opens and renders workspace", async ({ page }) => {
     await page.goto("/");
     await expect(page.locator('[data-testid="workspace-root"]')).toBeVisible();
     await expect(page.getByText("PHOTO → 3D ENGINE")).toBeVisible();
-    await expect(page.getByText(/Phase 0[1-7]/)).toBeVisible();
+    await expect(page.getByText(/Phase 0[1-8]/)).toBeVisible();
   });
 
   test("2. The upload control is visible in top bar and empty viewport", async ({ page }) => {
@@ -159,5 +159,44 @@ test.describe("Phase 01 - 07: Workspace & Viewport E2E Verification", () => {
 
     // Verify Entity Inspector container is mounted
     await expect(page.locator('[data-testid="entity-details-section"]')).toBeVisible();
+  });
+
+  test("12. Phase 08 Unified Hybrid Renderer representations and honest placeholders are functional", async ({ page }) => {
+    await page.goto("/");
+
+    // Verify all 9 representation tabs from the unified registry are mounted
+    const photoTab = page.locator('[data-testid="mode-photo"]');
+    const detectionTab = page.locator('[data-testid="mode-detection"]');
+    const segTab = page.locator('[data-testid="mode-segmentation"]');
+    const depthTab = page.locator('[data-testid="mode-depth"]');
+    const spatialTab = page.locator('[data-testid="mode-spatial-photo"]');
+    const wireframeTab = page.locator('[data-testid="mode-wireframe"]');
+    const solidTab = page.locator('[data-testid="mode-solid3d"]');
+    const articulatedTab = page.locator('[data-testid="mode-articulated"]');
+    const combinedTab = page.locator('[data-testid="mode-combined"]');
+
+    await expect(photoTab).toBeVisible();
+    await expect(detectionTab).toBeVisible();
+    await expect(segTab).toBeVisible();
+    await expect(depthTab).toBeVisible();
+    await expect(spatialTab).toBeVisible();
+    await expect(wireframeTab).toBeVisible();
+    await expect(solidTab).toBeVisible();
+    await expect(articulatedTab).toBeVisible();
+    await expect(combinedTab).toBeVisible();
+
+    // Click Articulated mode and verify honest placeholder when mesh is not yet reconstructed
+    await articulatedTab.click();
+    await expect(articulatedTab).toHaveAttribute("aria-pressed", "true");
+    await expect(page.locator('[data-testid="articulated-placeholder"]')).toBeVisible();
+
+    // Click Combined mode and verify honest placeholder
+    await combinedTab.click();
+    await expect(combinedTab).toHaveAttribute("aria-pressed", "true");
+    await expect(page.locator('[data-testid="combined-placeholder"]')).toBeVisible();
+
+    // Return to Photo mode
+    await photoTab.click();
+    await expect(photoTab).toHaveAttribute("aria-pressed", "true");
   });
 });

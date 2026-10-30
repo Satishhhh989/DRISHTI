@@ -139,3 +139,4 @@ def test_skeleton_serialization_and_deserialization():
     assert reloaded.root_joint_id == "pelvis"
     assert reloaded.joints[0].id == "pelvis"
     assert reloaded.joints[0].parent_id is None
+

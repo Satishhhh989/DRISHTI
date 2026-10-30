@@ -31,7 +31,7 @@ describe("Workspace Page", () => {
 
     // Branding in top bar
     expect(screen.getByText("PHOTO → 3D ENGINE")).toBeInTheDocument();
-    expect(screen.getByText(/Phase 0[1-7]/)).toBeInTheDocument();
+    expect(screen.getByText(/Phase 0[1-8]/)).toBeInTheDocument();
 
     // Mode options
     expect(screen.getByTestId("mode-photo")).toBeInTheDocument();
@@ -41,6 +41,8 @@ describe("Workspace Page", () => {
     expect(screen.getByTestId("mode-spatial-photo")).toBeInTheDocument();
     expect(screen.getByTestId("mode-wireframe")).toBeInTheDocument();
     expect(screen.getByTestId("mode-solid3d")).toBeInTheDocument();
+    expect(screen.getByTestId("mode-articulated")).toBeInTheDocument();
+    expect(screen.getByTestId("mode-combined")).toBeInTheDocument();
 
     // Empty state viewport invitation
     expect(screen.getByTestId("empty-viewport-state")).toBeInTheDocument();

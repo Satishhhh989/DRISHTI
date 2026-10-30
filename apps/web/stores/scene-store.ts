@@ -10,6 +10,7 @@ import { create } from "zustand";
 import { Scene, VisualizationMode, RepresentationMode, createInitialScene } from "@photo-to-3d/scene-schema";
 import { ProcessingEvent } from "@photo-to-3d/shared-types";
 import { apiClient } from "@/lib/api-client";
+import { assetCache } from "@/lib/asset-cache";
 import {
   reduceProcessingEvent,
   StageProgressInfo,
@@ -159,6 +160,10 @@ export const useSceneStore = create<SceneState>((set, get) => ({
           ? "wireframe"
           : mode === "solid3d"
           ? "solid3d"
+          : mode === "articulated"
+          ? "articulated"
+          : mode === "combined"
+          ? "combined"
           : "photo",
     }),
 
@@ -304,7 +309,10 @@ export const useSceneStore = create<SceneState>((set, get) => ({
     });
   },
 
-  clearScene: () =>
+  clearScene: () => {
+    if (typeof window !== "undefined") {
+      assetCache.disposeAll();
+    }
     set({
       currentScene: null,
       localPhotoUrl: null,
@@ -318,7 +326,8 @@ export const useSceneStore = create<SceneState>((set, get) => ({
       lastSequenceNumber: 0,
       stages: {},
       partialFailures: [],
-    }),
+    });
+  },
 }));
 
 function roundAspect(w: number, h: number): number {

@@ -2,14 +2,26 @@
 
 A local-first AI-powered spatial reconstruction engine that transforms ordinary multi-person photographs into interactive, animated 3D scenes.
 
-Current Status: **Phase 07: DRISHTI Motion (Completed)**
+Current Status: **Phase 08: Unified Hybrid Renderer (Completed)**
 
 ---
 
-## Capabilities (Phase 07)
+## Capabilities (Phase 08)
 
 - **Local-First AI Architecture**: Runs entirely offline on the user's machine without any external cloud vision APIs or telemetry.
 - **Hardware Acceleration**: Automatic capability discovery and execution on Apple Silicon Metal Performance Shaders (`mps`), NVIDIA GPU (`cuda`), and optimized CPU fallback.
+- **Unified Hybrid Renderer Architecture (Phase 08)**:
+  - **Single Scene, Multiple Representations**: One unified rendering pipeline presenting the authoritative scene through 9 distinct representations while preserving entity identity, scene transforms, and user interactions.
+  - **Representation Registry (`packages/scene-schema/src/registry.ts`)**: Central registry declaring metadata, categories, required assets, supported scene types, rendering behaviors, and known limitations for all 9 representations (`original`, `detection`, `segmentation`, `depth`, `spatial_photo`, `wireframe`, `solid3d`, `articulated`, `combined`).
+  - **Unified Asset Cache (`apps/web/lib/asset-cache.ts`)**: Shared in-memory caching of parsed 3D models and textures, eliminating duplicate network fetches and re-parsing across mode switches. Reuses geometry buffers directly across solid, wireframe, articulated, and combined views.
+  - **Single Camera & Navigation Contract (`CameraController.tsx`)**:
+    - **2D Photographic Navigation**: Rotation locked to face image plane frontally, permitting pure 2D pan and zoom without accidental 3D tilting.
+    - **3D Scene Navigation**: Full unconstrained 360-degree orbit, pan, zoom, fit-to-scene, and focus-on-person.
+    - **Restrained Parallax Navigation**: Parallax bounds ($\pm 18^\circ$ azimuth, $75^\circ \text{--} 105^\circ$ polar) for Spatial Photo mode.
+    - **Camera State Preservation**: Switching between 3D representations (`solid3d` $\leftrightarrow$ `wireframe` $\leftrightarrow$ `articulated` $\leftrightarrow$ `combined`) **preserves** the user's active camera position, target, and zoom level.
+    - **Reliable Fit-to-View**: Exact mathematical distance calculation for fitting 2D photos and 3D multi-person meshes without clipping.
+  - **Unified Person Selection & Visibility**: Stable person entity IDs and selected entity state preserved across all representations that support selection. Entity visibility settings (`visible: boolean`) maintained across all views.
+  - **Hybrid Combined Scene Representation**: Unifies 3D assembled human meshes with an upright photographic spatial reference plane ($Z = -0.6\text{m}$, 85% opacity, locked aspect ratio).
 - **DRISHTI Motion Subsystem (Phase 07)**:
   - **Canonical 24-Joint Kinematic Skeleton**: Formulates a standardized 24-joint human skeleton aligned with SMPL and standard anatomical topology (`pelvis` root, hips, spine, neck, head, shoulders, elbows, wrists, hands, knees, ankles, feet).
   - **Structural Hierarchy Validation (`validate_skeleton_hierarchy`)**: Automated cycle detection, duplicate joint/index checks, missing parent validation, and non-finite coordinate assertions.

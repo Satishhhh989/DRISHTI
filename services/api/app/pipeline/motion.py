@@ -782,3 +782,4 @@ class ProceduralAnimationEngine:
 skeleton_fitter = SkeletonFitter(Path("./data/models/human_reconstruction/SMPL_N_model.npz"))
 rigging_engine = RiggingEngine(Path("./data/models/human_reconstruction/SMPL_N_model.npz"))
 procedural_animation_engine = ProceduralAnimationEngine()
+

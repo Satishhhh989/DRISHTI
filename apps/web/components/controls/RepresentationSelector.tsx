@@ -23,6 +23,8 @@ const MODES: ModeOption[] = [
   { id: "spatial_photo", label: "Spatial Photo", testId: "mode-spatial-photo" },
   { id: "wireframe", label: "Wireframe", testId: "mode-wireframe" },
   { id: "solid3d", label: "3D Solid", testId: "mode-solid3d" },
+  { id: "articulated", label: "Articulated", testId: "mode-articulated" },
+  { id: "combined", label: "Combined", testId: "mode-combined" },
 ];
 
 export const RepresentationSelector: React.FC = () => {
@@ -45,7 +47,7 @@ export const RepresentationSelector: React.FC = () => {
         const avail = availability[mode.id];
 
         let badgeText = mode.badge;
-        if (!badgeText) {
+        if (!badgeText && avail) {
           if (avail.status === "processing") {
             badgeText = "LIVE";
           } else if (avail.status === "failed") {
@@ -61,7 +63,7 @@ export const RepresentationSelector: React.FC = () => {
             onClick={() => setVisualizationMode(mode.id)}
             aria-pressed={isActive}
             data-testid={mode.testId}
-            title={avail.reason}
+            title={avail?.reason || mode.label}
           >
             <span>{mode.label}</span>
             {badgeText && <span className={styles.badge}>{badgeText}</span>}

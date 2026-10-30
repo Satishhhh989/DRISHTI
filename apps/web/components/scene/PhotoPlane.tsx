@@ -3,6 +3,7 @@
 import React, { useEffect, useState } from "react";
 import * as THREE from "three";
 import { useSceneStore } from "@/stores/scene-store";
+import { assetCache } from "@/lib/asset-cache";
 import { DetectionBox } from "./DetectionBox";
 import { SegmentationMaskLayer } from "./SegmentationMaskLayer";
 import { SpatialPhotoSurface } from "./SpatialPhotoSurface";
@@ -10,6 +11,7 @@ import { SpatialPhotoSurface } from "./SpatialPhotoSurface";
 interface PhotoPlaneProps {
   photoUrl: string;
   aspectRatio: number; // width / height
+  isReferencePlane?: boolean;
 }
 
 const PALETTE = [
@@ -21,7 +23,11 @@ const PALETTE = [
   { hex: 0x06b6d4, css: "#06b6d4" }, // Cyan
 ];
 
-export const PhotoPlane: React.FC<PhotoPlaneProps> = ({ photoUrl, aspectRatio }) => {
+export const PhotoPlane: React.FC<PhotoPlaneProps> = ({
+  photoUrl,
+  aspectRatio,
+  isReferencePlane = false,
+}) => {
   const [photoTexture, setPhotoTexture] = useState<THREE.Texture | null>(null);
   const [depthVisTexture, setDepthVisTexture] = useState<THREE.Texture | null>(null);
 
@@ -30,28 +36,20 @@ export const PhotoPlane: React.FC<PhotoPlaneProps> = ({ photoUrl, aspectRatio })
   const depthStrength = useSceneStore((state) => state.depthStrength);
   const depthVisualizationUrl = useSceneStore((state) => state.depthVisualizationUrl);
 
-  // 1. Load original photo texture
+  // 1. Load original photo texture via unified assetCache
   useEffect(() => {
     let active = true;
-    const loader = new THREE.TextureLoader();
 
-    loader.load(
-      photoUrl,
-      (loadedTex) => {
-        if (!active) {
-          loadedTex.dispose();
-          return;
+    assetCache
+      .loadTexture(photoUrl, true)
+      .then((tex) => {
+        if (active) {
+          setPhotoTexture(tex);
         }
-        loadedTex.colorSpace = THREE.SRGBColorSpace;
-        loadedTex.minFilter = THREE.LinearFilter;
-        loadedTex.generateMipmaps = false;
-        setPhotoTexture(loadedTex);
-      },
-      undefined,
-      (err) => {
+      })
+      .catch((err) => {
         console.error("Failed to load photograph texture into 3D plane:", err);
-      }
-    );
+      });
 
     return () => {
       active = false;
@@ -66,45 +64,30 @@ export const PhotoPlane: React.FC<PhotoPlaneProps> = ({ photoUrl, aspectRatio })
     }
 
     let active = true;
-    const loader = new THREE.TextureLoader();
 
-    loader.load(
-      depthVisualizationUrl,
-      (loadedTex) => {
-        if (!active) {
-          loadedTex.dispose();
-          return;
+    assetCache
+      .loadTexture(depthVisualizationUrl, false)
+      .then((tex) => {
+        if (active) {
+          setDepthVisTexture(tex);
         }
-        loadedTex.minFilter = THREE.LinearFilter;
-        loadedTex.magFilter = THREE.LinearFilter;
-        loadedTex.generateMipmaps = false;
-        setDepthVisTexture(loadedTex);
-      },
-      undefined,
-      (err) => {
+      })
+      .catch((err) => {
         console.error("Failed to load depth visualization texture:", err);
-      }
-    );
+      });
 
     return () => {
       active = false;
     };
   }, [depthVisualizationUrl]);
 
-  // Clean up textures on unmount
-  useEffect(() => {
-    return () => {
-      if (photoTexture) photoTexture.dispose();
-      if (depthVisTexture) depthVisTexture.dispose();
-    };
-  }, [photoTexture, depthVisTexture]);
-
   // Plane dimensions: height = 2.0 meters, width = 2.0 * aspectRatio
   const height = 2.0;
   const width = Math.max(0.2, height * (aspectRatio > 0 ? aspectRatio : 1));
 
-  // Center plane so the bottom rests gently above the ground plane (Y = height / 2)
+  // Center plane so bottom rests at ground plane (Y = height / 2)
   const positionY = height / 2;
+  const positionZ = isReferencePlane ? -0.6 : 0;
 
   if (!photoTexture) {
     return null;
@@ -113,9 +96,9 @@ export const PhotoPlane: React.FC<PhotoPlaneProps> = ({ photoUrl, aspectRatio })
   const entities = currentScene?.entities || [];
 
   return (
-    <group position={[0, positionY, 0]}>
-      {/* 1. Spatial Photo Mode: Depth-aware displaced 3D mesh */}
-      {visualizationMode === "spatial_photo" && depthVisualizationUrl ? (
+    <group position={[0, positionY, positionZ]} data-testid={isReferencePlane ? "photo-reference-plane" : "photo-plane-group"}>
+      {/* 1. Spatial Photo Mode: Depth-aware displaced 3D mesh (Only in non-reference spatial photo mode) */}
+      {!isReferencePlane && visualizationMode === "spatial_photo" && depthVisualizationUrl ? (
         <SpatialPhotoSurface
           photoUrl={photoUrl}
           depthUrl={depthVisualizationUrl}
@@ -124,18 +107,20 @@ export const PhotoPlane: React.FC<PhotoPlaneProps> = ({ photoUrl, aspectRatio })
           depthStrength={depthStrength}
         />
       ) : (
-        /* 2. Flat 3D Plane Mode: Used for Original, Detection, Segmentation, or Depth Map */
+        /* 2. Flat 3D Plane Mode: Used for Original, Detection, Segmentation, Depth Map, or Combined Reference */
         <>
           <mesh receiveShadow castShadow>
             <planeGeometry args={[width, height]} />
             <meshBasicMaterial
               map={
-                visualizationMode === "depth" && depthVisTexture
+                !isReferencePlane && visualizationMode === "depth" && depthVisTexture
                   ? depthVisTexture
                   : photoTexture
               }
               side={THREE.DoubleSide}
               transparent={true}
+              opacity={isReferencePlane ? 0.85 : 1.0}
+              depthWrite={!isReferencePlane}
             />
           </mesh>
 
@@ -143,15 +128,22 @@ export const PhotoPlane: React.FC<PhotoPlaneProps> = ({ photoUrl, aspectRatio })
           <lineSegments>
             <edgesGeometry args={[new THREE.PlaneGeometry(width, height)]} />
             <lineBasicMaterial
-              color={visualizationMode === "depth" ? "#a1a1aa" : "#3f3f46"}
-              linewidth={1}
+              color={
+                isReferencePlane
+                  ? "#6366f1"
+                  : visualizationMode === "depth"
+                  ? "#a1a1aa"
+                  : "#3f3f46"
+              }
+              linewidth={isReferencePlane ? 2 : 1}
             />
           </lineSegments>
         </>
       )}
 
-      {/* Segmentation Mask Overlays (Only in segmentation mode) */}
-      {visualizationMode === "segmentation" &&
+      {/* Segmentation Mask Overlays (Only in 2D segmentation inspection mode) */}
+      {!isReferencePlane &&
+        visualizationMode === "segmentation" &&
         entities.map((entity, idx) => {
           const color = PALETTE[idx % PALETTE.length];
           return (
@@ -165,8 +157,9 @@ export const PhotoPlane: React.FC<PhotoPlaneProps> = ({ photoUrl, aspectRatio })
           );
         })}
 
-      {/* Detection Bounding Boxes (In detection or segmentation mode) */}
-      {(visualizationMode === "detection" || visualizationMode === "segmentation") &&
+      {/* Detection Bounding Boxes (In 2D detection or segmentation inspection mode) */}
+      {!isReferencePlane &&
+        (visualizationMode === "detection" || visualizationMode === "segmentation") &&
         entities.map((entity, idx) => {
           const color = PALETTE[idx % PALETTE.length];
           return (

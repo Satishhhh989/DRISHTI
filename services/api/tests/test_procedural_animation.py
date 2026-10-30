@@ -66,3 +66,4 @@ def test_multiple_people_independent_animations():
     assert clips_p1[0].target_entity_id == "person-001"
     assert clips_p2[0].target_entity_id == "person-002"
     assert clips_p1[0].id != clips_p2[0].id
+

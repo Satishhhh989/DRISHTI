@@ -62,3 +62,4 @@ def test_real_yolo_pose_smoke():
     poses = estimator.estimate_poses(test_img)
     # Blank canvas contains zero people, should return empty list gracefully without throwing
     assert isinstance(poses, list)
+

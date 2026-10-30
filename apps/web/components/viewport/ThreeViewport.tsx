@@ -93,6 +93,12 @@ export const ThreeViewport: React.FC = () => {
     return <div className={styles.viewportContainer} />;
   }
 
+  const is3DMode =
+    activeRepresentation === "wireframe" ||
+    activeRepresentation === "solid3d" ||
+    activeRepresentation === "articulated" ||
+    activeRepresentation === "combined";
+
   return (
     <div
       className={styles.viewportContainer}
@@ -101,7 +107,7 @@ export const ThreeViewport: React.FC = () => {
       onDrop={handleDrop}
       data-testid="viewport-container"
     >
-      {/* Representation Notice when mode is not yet produced by reconstruction */}
+      {/* Honest Placeholders when mode is not yet available */}
       {activeRepresentation === "wireframe" && !hasReconstructedMeshes && (
         <div className={styles.representationNotice} data-testid="wireframe-placeholder">
           <span className={styles.noticeBadge}>Phase 06</span>
@@ -113,6 +119,20 @@ export const ThreeViewport: React.FC = () => {
         <div className={styles.representationNotice} data-testid="solid3d-placeholder">
           <span className={styles.noticeBadge}>Phase 06 / 07</span>
           <span>Solid volumetric human mesh not generated yet. Reconstruction activates in Phase 06.</span>
+        </div>
+      )}
+
+      {activeRepresentation === "articulated" && !hasReconstructedMeshes && (
+        <div className={styles.representationNotice} data-testid="articulated-placeholder">
+          <span className={styles.noticeBadge}>Phase 07 / 08</span>
+          <span>Articulated character representation requires reconstructed 3D mesh and fitted kinematic rig.</span>
+        </div>
+      )}
+
+      {activeRepresentation === "combined" && !hasReconstructedMeshes && (
+        <div className={styles.representationNotice} data-testid="combined-placeholder">
+          <span className={styles.noticeBadge}>Phase 08</span>
+          <span>Combined hybrid scene requires both photograph and reconstructed 3D human meshes.</span>
         </div>
       )}
 
@@ -155,17 +175,27 @@ export const ThreeViewport: React.FC = () => {
               {/* Spatial Floor Reference */}
               <GridFloor />
 
-              {/* Photographic plane rendered in 3D coordinate space */}
+              {/* 1. Photographic plane rendered in 3D coordinate space (Photo / Inspection Modes) */}
               {activeRepresentation === "photo" && photoDimensions && (
                 <PhotoPlane
                   photoUrl={localPhotoUrl}
                   aspectRatio={photoDimensions.aspect}
+                  isReferencePlane={false}
                 />
               )}
 
-              {/* Reconstructed 3D Human Mesh (Wireframe or Shaded Solid) */}
-              {(activeRepresentation === "wireframe" || activeRepresentation === "solid3d") && (
-                <HumanMeshLayer mode={activeRepresentation} />
+              {/* 2. Hybrid Combined Scene: Photographic Reference Plane + Assembled 3D Characters */}
+              {activeRepresentation === "combined" && photoDimensions && (
+                <PhotoPlane
+                  photoUrl={localPhotoUrl}
+                  aspectRatio={photoDimensions.aspect}
+                  isReferencePlane={true}
+                />
+              )}
+
+              {/* 3. Reconstructed 3D Human Meshes (Wireframe, Solid, Articulated, or Combined) */}
+              {is3DMode && (
+                <HumanMeshLayer mode={activeRepresentation as "wireframe" | "solid3d" | "articulated" | "combined"} />
               )}
 
               {/* Camera navigation */}
@@ -177,4 +207,3 @@ export const ThreeViewport: React.FC = () => {
     </div>
   );
 };
-

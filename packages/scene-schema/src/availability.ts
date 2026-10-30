@@ -137,6 +137,46 @@ export function computeRepresentationAvailability(
     meshStatus = "pending";
   }
 
+  // 8. Articulated Character Representation (Phase 07/08)
+  const hasRiggedMeshes = Boolean(
+    scene?.entities?.some(
+      (e) =>
+        e.reconstruction?.status === "ready" &&
+        e.rig?.status === "rigged" &&
+        Boolean(e.skeleton)
+    )
+  );
+  const isRigging =
+    isAnalyzing &&
+    (activeJobStage === "pose_estimation" ||
+      activeJobStage === "skeleton_fitting" ||
+      activeJobStage === "mesh_rigging" ||
+      activeJobStage === "animation_preparation");
+
+  let articulatedStatus: RepresentationStatus = "unavailable";
+  if (hasRiggedMeshes) {
+    articulatedStatus = "ready";
+  } else if (isRigging) {
+    articulatedStatus = "processing";
+  } else if (isAnalyzing) {
+    articulatedStatus = "pending";
+  }
+
+  // 9. Combined Hybrid Scene Representation (Phase 08)
+  const combinedReady = hasPhoto && hasReconstructedMeshes;
+  let combinedStatus: RepresentationStatus = "unavailable";
+  if (combinedReady) {
+    combinedStatus = "ready";
+  } else if (
+    isReconstructing ||
+    isRigging ||
+    (isAnalyzing && activeJobStage === "scene_assembly")
+  ) {
+    combinedStatus = "processing";
+  } else if (isAnalyzing) {
+    combinedStatus = "pending";
+  }
+
   return {
     original: {
       status: originalStatus,
@@ -210,6 +250,26 @@ export function computeRepresentationAvailability(
           : meshStatus === "failed"
           ? "Human mesh reconstruction failed"
           : "Requires 3D human mesh reconstruction",
+    },
+    articulated: {
+      status: articulatedStatus,
+      isSelectable: articulatedStatus === "ready",
+      reason:
+        articulatedStatus === "ready"
+          ? "Articulated character with kinematic skeleton ready"
+          : articulatedStatus === "processing"
+          ? "Rigging and fitting skeleton..."
+          : "Requires rigged 3D human mesh",
+    },
+    combined: {
+      status: combinedStatus,
+      isSelectable: combinedStatus === "ready",
+      reason:
+        combinedStatus === "ready"
+          ? "Combined photographic plane and 3D scene assembly ready"
+          : combinedStatus === "processing"
+          ? "Assembling hybrid 3D scene..."
+          : "Requires source photo and 3D human meshes",
     },
   };
 }

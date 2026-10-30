@@ -100,3 +100,4 @@ async def test_full_pipeline_motion_articulation(test_scene_with_photo):
         assert entity.rig is not None
         assert entity.rig.status == "rigged"
         assert len(entity.animation_clips) == 4
+

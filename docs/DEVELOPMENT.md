@@ -63,13 +63,13 @@ bash scripts/test.sh
 ```
 
 This executes:
-1. `packages/scene-schema`: Vitest schema validation, representation availability, and contract tests (10 tests).
+1. `packages/scene-schema`: Vitest schema validation, representation availability, contract, and representation registry tests (14 tests).
 2. `packages/shared-types`: Vitest event contract and DTO tests (2 tests).
-3. `apps/web`: Vitest component, store, event reducer, 3D mesh rendering, assembly inspector, skeleton overlay, motion controls, and visualization tests (27 tests).
+3. `apps/web`: Vitest component, store, event reducer, 3D mesh rendering, assembly inspector, skeleton overlay, motion controls, asset cache, and unified hybrid renderer tests (32 tests).
 4. `services/api`: Pytest backend test suite (unit tests, mock pipeline, real model MPS smoke tests, geometry validation, progressive event stream tests, scene assembly engine, skeleton validation, pose estimation, rigging, procedural animation, and disk persistence tests) (88 tests).
-5. `tests/e2e`: Playwright browser-level end-to-end tests including Phase 07 motion stages and controls verification (11 tests).
+5. `tests/e2e`: Playwright browser-level end-to-end tests including Phase 08 unified renderer representation verification (12 tests).
 
-**Total Verified Tests: 138 passing.**
+**Total Verified Tests: 148 passing.**
 
 ### Running Individual Test Suites
 
@@ -91,10 +91,10 @@ PYTHONPATH=services/api pytest services/api/tests/test_pipeline_motion.py -v
 # Frontend tests (vitest)
 pnpm --filter @photo-to-3d/web test
 
-# Motion UI component tests
-pnpm --filter @photo-to-3d/web test apps/web/tests/motion-view.test.tsx
+# Unified Hybrid Renderer UI tests (Phase 08)
+pnpm --filter @photo-to-3d/web test apps/web/tests/unified-renderer.test.tsx
 
-# Schema package tests
+# Schema package tests (Phase 08 Registry)
 pnpm --filter @photo-to-3d/scene-schema test
 
 # Shared types tests
