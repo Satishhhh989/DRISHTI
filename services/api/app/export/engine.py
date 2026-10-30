@@ -227,8 +227,19 @@ class ExportEngine:
         except Exception as e:
             raise ValidationAppError(f"Invalid ZIP archive: {e}")
 
-        # Security check: verify no path traversal in any entry
-        for member in zf.infolist():
+        # Security check: verify no path traversal, zip bombs, or excessive entries
+        MAX_ARCHIVE_ENTRIES = 250
+        MAX_UNCOMPRESSED_BYTES = 500 * 1024 * 1024  # 500 MB
+        MAX_INDIVIDUAL_ENTRY_BYTES = 100 * 1024 * 1024  # 100 MB
+
+        infolist = zf.infolist()
+        if len(infolist) > MAX_ARCHIVE_ENTRIES:
+            raise ValidationAppError(
+                f"Security violation: Archive contains too many entries ({len(infolist)} > {MAX_ARCHIVE_ENTRIES})"
+            )
+
+        total_uncompressed = 0
+        for member in infolist:
             filename = member.filename
             if filename.startswith("/") or filename.startswith("\\") or ":" in filename:
                 raise ValidationAppError(
@@ -239,6 +250,23 @@ class ExportEngine:
                 raise ValidationAppError(
                     f"Security violation: Archive contains path traversal components: '{filename}'"
                 )
+
+            # Decompression bomb checks
+            if member.file_size > MAX_INDIVIDUAL_ENTRY_BYTES:
+                raise ValidationAppError(
+                    f"Security violation: Entry '{filename}' exceeds maximum allowed size ({member.file_size / (1024*1024):.1f} MB)"
+                )
+            total_uncompressed += member.file_size
+            if total_uncompressed > MAX_UNCOMPRESSED_BYTES:
+                raise ValidationAppError(
+                    f"Security violation: Total uncompressed archive size exceeds limit ({total_uncompressed / (1024*1024):.1f} MB)"
+                )
+            if member.compress_size > 0 and member.file_size > 1024 * 1024:
+                compression_ratio = member.file_size / member.compress_size
+                if compression_ratio > 100:
+                    raise ValidationAppError(
+                        f"Security violation: Suspicious compression ratio ({compression_ratio:.1f}x) for '{filename}'"
+                    )
 
         namelist = set(zf.namelist())
         if "project.json" not in namelist:

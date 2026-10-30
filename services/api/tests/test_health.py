@@ -13,7 +13,7 @@ async def test_health_endpoint():
         data = response.json()
         assert data["status"] == "ok"
         assert data["service"] == "photo-to-3d-api"
-        assert data["version"] == "0.1.0"
+        assert data["version"] == "1.0.0"
         assert "timestamp" in data
         assert data["storage_available"] is True
 

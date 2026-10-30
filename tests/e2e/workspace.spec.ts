@@ -5,7 +5,7 @@ test.describe("Phase 01 - 09: Workspace & Viewport E2E Verification", () => {
     await page.goto("/");
     await expect(page.locator('[data-testid="workspace-root"]')).toBeVisible();
     await expect(page.getByText("PHOTO → 3D ENGINE")).toBeVisible();
-    await expect(page.getByText(/Phase 0[1-9]/)).toBeVisible();
+    await expect(page.getByText(/Phase (0[1-9]|10)/)).toBeVisible();
   });
 
   test("2. The upload control is visible in top bar and empty viewport", async ({ page }) => {

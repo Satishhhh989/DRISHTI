@@ -11,7 +11,7 @@ async def test_version_endpoint():
         response = await client.get("/api/v1/version")
         assert response.status_code == 200
         data = response.json()
-        assert data["service_version"] == "0.1.0"
+        assert data["service_version"] == "1.0.0"
         assert data["api_version"] == "v1"
         assert data["schema_version"] == "1.0.0"
 

@@ -20,7 +20,7 @@ class Settings(BaseSettings):
     # Runtime Environment
     app_env: str = Field(default="development", alias="APP_ENV")
     service_name: str = "photo-to-3d-api"
-    service_version: str = "0.1.0"
+    service_version: str = "1.0.0"
     api_version: str = "v1"
     schema_version: str = "1.0.0"
 

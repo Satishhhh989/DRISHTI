@@ -2,14 +2,20 @@
 
 A local-first AI-powered spatial reconstruction engine that transforms ordinary multi-person photographs into interactive, animated 3D scenes.
 
-Current Status: **Phase 09: Interaction, Persistence & Export (Completed)**
+Current Status: **Phase 10: Integration, Testing, Security Hardening & Release (COMPLETED — v1.0.0 Final Release)**
 
 ---
 
-## Capabilities (Phase 09)
+## Capabilities (v1.0.0 Final Release)
 
-- **Local-First AI Architecture**: Runs entirely offline on the user's machine without any external cloud vision APIs or telemetry.
-- **Hardware Acceleration**: Automatic capability discovery and execution on Apple Silicon Metal Performance Shaders (`mps`), NVIDIA GPU (`cuda`), and optimized CPU fallback.
+- **Local-First AI Architecture**: Runs entirely offline on the user's machine without any external cloud vision APIs, external telemetry, or data exfiltration.
+- **Hardware Acceleration**: Automatic capability discovery and execution on Apple Silicon Metal Performance Shaders (`mps`), NVIDIA GPU (`cuda`), and optimized multi-threaded CPU fallback.
+- **Security & Privacy Hardening (Phase 10)**:
+  - **Loopback Enforcement**: REST API binds strictly to `127.0.0.1:8000` with CORS restricted to local browser origins (`http://localhost:3000`, `http://127.0.0.1:3000`).
+  - **HTTP Security Headers**: Emits `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`, `Referrer-Policy: strict-origin-when-cross-origin`, and `X-XSS-Protection: 1; mode=block`.
+  - **Input Validation & Decompression Bomb Protection**: Pillow `MAX_IMAGE_PIXELS = 25,000,000`, dimension bounding ($8192 \times 8192$), upload size capping (25 MB max), structural Pillow verification, and animated format rejection.
+  - **Anti-Zip-Slip Traversal Defense**: Strict path component inspection rejecting `..`, absolute paths, and drive letters during project archive imports.
+  - **Anti-Zip-Bomb Resource Limits**: Enforces bounds on imported archives (`MAX_ARCHIVE_ENTRIES = 250`, `MAX_UNCOMPRESSED_BYTES = 500MB`, `MAX_INDIVIDUAL_ENTRY_BYTES = 100MB`, compression ratio $\le 100\times$).
 - **Interaction, Persistence & Export Subsystem (Phase 09)**:
   - **Local Project Management**: Project creation, renaming, opening, recent projects discovery, and project-level metadata tracking.
   - **Atomic Disk Persistence**: All project and scene state writes are buffered to temporary `.tmp` files, flushed, and atomically replaced (`tmp_path.replace(path)`) to guarantee zero file corruption from interrupted saves.
@@ -131,10 +137,23 @@ DRISHTI/
 │   │   └── human_reconstruction/    # SPIN checkpoint (.pth.tar) + SMPL Neutral model (.npz)
 │   └── storage/               # Local user photos, segmentation masks, depth maps, and meshes (.glb)
 │
-├── docs/                      # ARCHITECTURE, SCENE_SCHEMA, EVENT_PROTOCOL, DEVELOPMENT, ROADMAP
+├── docs/                      # ARCHITECTURE, INSTALLATION, MODEL_SETUP, SECURITY, TESTING, RELEASE_NOTES, TROUBLESHOOTING, ROADMAP
 ├── scripts/                   # dev.sh, test.sh, test_backend.sh, setup.sh, run_api.sh
 └── tests/                     # Playwright browser-level E2E tests
 ```
+
+---
+
+## Documentation Suite
+
+- [**System Architecture**](file:///Users/satish/Desktop/DRISHTI/docs/ARCHITECTURE.md): Multi-stage pipeline, monorepo design, scene graph, and state flow.
+- [**Installation & Setup**](file:///Users/satish/Desktop/DRISHTI/docs/INSTALLATION.md): Prerequisites, automated and manual setup guides for macOS, Linux, and Windows WSL2.
+- [**Model Setup & Licenses**](file:///Users/satish/Desktop/DRISHTI/docs/MODEL_SETUP.md): Weight locations, architectures, license table, and hardware acceleration guide.
+- [**Security & Privacy**](file:///Users/satish/Desktop/DRISHTI/docs/SECURITY.md): Local privacy boundary, Anti-Zip-Slip, decompression bomb defenses, and loopback enforcement.
+- [**Testing & QA**](file:///Users/satish/Desktop/DRISHTI/docs/TESTING.md): Testing philosophy, test suite breakdowns, and execution guide for all 182 tests.
+- [**v1.0.0 Release Notes**](file:///Users/satish/Desktop/DRISHTI/docs/RELEASE_NOTES.md): Complete changelog, metrics, and deliverable review across all 10 phases.
+- [**Troubleshooting**](file:///Users/satish/Desktop/DRISHTI/docs/TROUBLESHOOTING.md): Common diagnostics, port conflict resolutions, and device issue remedies.
+- [**Engineering Roadmap**](file:///Users/satish/Desktop/DRISHTI/docs/ROADMAP.md): Complete 10-phase milestone tracking.
 
 ---
 
@@ -155,15 +174,15 @@ bash scripts/dev.sh
 
 ### 3. Run Automated Tests
 ```bash
-# Complete test suite across all packages (103 tests)
+# Complete test suite across all packages (182 tests)
 bash scripts/test.sh
 
 # Individual suites:
-bash scripts/test_backend.sh              # Backend pytest suite (59 tests)
-pnpm --filter @photo-to-3d/web test       # Frontend vitest suite (23 tests)
-pnpm --filter @photo-to-3d/scene-schema test # Scene schema tests (10 tests)
+bash scripts/test_backend.sh                 # Backend pytest suite (112 tests)
+pnpm --filter @photo-to-3d/web test          # Frontend vitest suite (37 tests)
+pnpm --filter @photo-to-3d/scene-schema test # Scene schema tests (18 tests)
 pnpm --filter @photo-to-3d/shared-types test # Shared type tests (2 tests)
-pnpm test:e2e                             # Playwright E2E browser tests (9 tests)
+pnpm test:e2e                                # Playwright E2E browser tests (13 tests)
 ```
 
 ---
@@ -171,8 +190,8 @@ pnpm test:e2e                             # Playwright E2E browser tests (9 test
 ## Engineering Rules
 
 1. **No Cloud Vision APIs**: All neural inference runs locally on the host hardware.
-2. **Local Pretrained Models Only**: Lightweight, high-performance YOLOv8 nano segmentation (~6.7MB), Depth Anything V2 Small (~99.2MB), and SPIN + SMPL Neutral (~191MB), explicitly managed in `data/models/`.
-3. **No Fake AI or Synthetic Meshes**: Detection boxes, masks, confidence scores, depth maps, and 3D polygon meshes reflect actual model inference outputs. Skeletal rigging and character animation remain honest future milestones (Phases 08 and 09).
+2. **Local Pretrained Models Only**: Lightweight, high-performance YOLOv8 nano segmentation (~7.1MB), YOLOv8 nano pose (~6.8MB), Depth Anything V2 Small (~95MB), and SPIN + SMPL Neutral (~187MB), explicitly managed in `data/models/`.
+3. **No Fake AI or Synthetic Meshes**: Detection boxes, masks, confidence scores, depth maps, 3D polygon meshes, and 24-joint skeletons reflect actual model inference outputs. Procedural animations carry explicit provenance labels.
 4. **Progressive Visibility**: Reveal intermediate assets as they are computed; never block the UI behind a monolithic opaque spinner.
 5. **Strict Coordinate System**: Right-handed Cartesian coordinates ($+X$ Right, $+Y$ Up, $+Z$ Forward, metric units).
-6. **Security & Privacy**: Enforced loopback binding (`127.0.0.1`), safe asset path sanitization preventing directory traversal, and strict decompression bomb protection.
+6. **Security & Privacy**: Enforced loopback binding (`127.0.0.1`), safe asset path sanitization preventing directory traversal, Anti-Zip-Slip archive verification, and strict decompression bomb protection.

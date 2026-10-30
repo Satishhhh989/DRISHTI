@@ -1,6 +1,6 @@
 {
   "name": "photo-to-3d-engine",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "private": true,
   "description": "Local-first AI application transforming photographs of multiple people into interactive 3D scenes",
   "workspaces": [

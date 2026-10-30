@@ -4,66 +4,66 @@
 
 **DRISHTI** is a local-first AI-powered spatial reconstruction engine that transforms ordinary photographs containing multiple people into interactive, animated 3D scenes. Normal operations—including model inference, asset processing, scene assembly, and project persistence—execute strictly on the user's local machine.
 
-Phase 06 implements the **Multi-Person Scene Assembly Engine**, transforming individually reconstructed people into a unified, interactive, persistent 3D scene. DRISHTI preserves the original photograph's spatial composition (left, center, right horizontal ordering and relative depth layers) while building a complete, versioned 3D scene graph (`SceneGraph`). Entities whose mesh reconstruction is incomplete remain represented in-scene alongside successfully reconstructed subjects. The scene is saved locally to disk (`data/storage/scenes/{scene_id}.json`) and rendered with camera controls (orbit, pan, zoom, fit-to-scene, focus person) and per-person visibility toggling.
+Phase 10 completes the full engineering roadmap, delivering the complete, integrated, security-hardened **DRISHTI v1.0.0** release across four primary subsystems:
+1. **DRISHTI Engine**: Local vision inference (YOLOv8-seg, Depth Anything V2, SPIN + SMPL LBS, YOLOv8-pose) executing on Apple Silicon MPS, NVIDIA CUDA, or CPU fallback.
+2. **DRISHTI Studio**: Unified 9-representation interactive 3D workspace (Next.js 15, React 19, Three.js, React Three Fiber, Zustand) with camera state preservation and progressive asset reveals.
+3. **DRISHTI Scene**: Canonical scene graph, metric spatial coordinates ($+X$ Right, $+Y$ Up, $+Z$ Forward), ground contact alignment, and persistent asset manifests.
+4. **DRISHTI Motion**: Canonical 24-joint kinematic skeleton, normalized Linear Blend Skinning weights, and deterministic procedural animations.
 
 ```
 +-----------------------------------------------------------------------------------------+
 |                                     Browser Client                                      |
 |                                                                                         |
 |  +-----------------------------------------------------------------------------------+  |
-|  |                            Workspace Shell (Next.js)                              |  |
+|  |                            Workspace Shell (Next.js 15)                           |  |
 |  |  +---------------------+  +--------------------------------+  +----------------+  |  |
-|  |  |  TopBar Navigation  |  | Representation / Vis Modes     |  | Pipeline &     |  |  |
-|  |  |  (Fit Scene, Reset) |  | (Availability-Driven Selector) |  | Inspector Pane |  |  |
-|  |  |                     |  | (Orig / Detect / Seg / Depth / |  | (Stages, Mesh, |  |  |
-|  |  |                     |  |  Spatial Photo / Wire / Solid) |  |  SceneAssembly)|  |  |
+|  |  |  TopBar Navigation  |  | Unified Representation Switcher|  | Contextual &   |  |  |
+|  |  |  (Fit Scene, Reset, |  | (9 Modes: Orig / Detect / Seg / |  | Transform       |  |  |
+|  |  |   Save, Export)     |  |  Depth / Spatial / Wire / Solid|  | Inspector Pane |  |  |
+|  |  |                     |  |  Articulated / Combined)       |  | (Live Stages)  |  |  |
 |  |  +---------------------+  +--------------------------------+  +----------------+  |  |
 |  +-----------------------------------------------------------------------------------+  |
 |  |                        Three.js Viewport (React Three Fiber)                      |  |
 |  |  +--------------------+  +----------------------------------+  +---------------+  |  |
 |  |  | Perspective Camera |  | Upright PhotoPlane /             |  | HumanMeshLayer|  |  |
 |  |  | & Lighting         |  | SpatialPhotoSurface (128x128)   |  | - Wireframe   |  |  |
-|  |  | - Fit-to-Scene     |  |   + Vertex Displacement Map      |  | - Solid Clay  |  |  |
-|  |  | - Focus-on-Person  |  |   + 3D Detection Boxes & Masks   |  | - In-Scene Box|  |  |
-|  |  | - Orbit / Pan/Zoom |  |   + Reference Photo Plane        |  | - Raycast Sel |  |  |
+|  |  | - Single Contract  |  |   + Vertex Displacement Map      |  | - Solid Clay  |  |  |
+|  |  | - State Preserved  |  |   + 3D Detection Boxes & Masks   |  | - Skeleton Rig|  |  |
+|  |  | - Orbit / Pan/Zoom |  |   + Photographic Reference Plane |  | - Procedural  |  |  |
 |  |  +--------------------+  +----------------------------------+  +---------------+  |  |
 |  +-----------------------------------------------------------------------------------+  |
 |  |  Zustand Stores: useSceneStore (Scene, Reducer, Stages) / useUIStore              |  |
 |  |  Event Reducer: Idempotent sequence ordering, partial failure isolation           |  |
+|  |  Asset Cache: Direct geometry and texture reuse across representation switches    |  |
 |  +-----------------------------------------------------------------------------------+  |
 +--------------------------------------------|--------------------------------------------+
-                                             | HTTP / SSE Stream (127.0.0.1:8000)
+                                             | HTTP Security Headers / SSE Stream (127.0.0.1:8000)
                                              v
 +-----------------------------------------------------------------------------------------+
 |                             Local Backend Service (FastAPI)                             |
 |                                                                                         |
 |  +-----------------------+  +----------------------+  +------------------------------+  |
-|  | Health & Version APIs |  | Scene Lifecycle API  |  | Asset Manager API            |  |
-|  |                       |  | (/scenes, /save)     |  | (/photos, /masks, /meshes)   |  |
+|  | Health & Version APIs |  | Scene Lifecycle API  |  | Asset & Export Engine API    |  |
+|  | (127.0.0.1 Loopback)  |  | (/scenes, /projects) |  | (/export: glb, scene, zip)   |  |
 |  +-----------------------+  +----------------------+  +------------------------------+  |
-|  | Event Emitter (Bounded 500-event FIFO)          |  | Job State Tracker            |  |
-|  | Real-Time SSE Stream (/jobs/{id}/stream)        |  | Cancellation Handler         |  |
+|  | Event Emitter (Bounded 500-event FIFO)          |  | Anti-Zip-Slip & Bomb Defense |  |
+|  | Real-Time SSE Stream (/jobs/{id}/stream)        |  | Safe Project Archive Import  |  |
 |  +-------------------------------------------------+  +------------------------------+  |
-|  | Progressive Multi-Stage Intelligence Pipeline (Phase 01 - 06)                     |  |
-|  |  - DeviceManager: Apple Silicon MPS / NVIDIA CUDA / CPU fallback                  |  |
+|  | Progressive Multi-Stage Intelligence Pipeline                                     |  |
+|  |  - DeviceManager: Apple Silicon MPS / NVIDIA CUDA / CPU SIMD fallback             |  |
 |  |  - ModelRegistry: Local cache in data/models/                                     |  |
-|  |      * yolov8n-seg.pt (6.7MB)                                                     |  |
-|  |      * depth-anything-v2-small/ (99.2MB safetensors)                             |  |
-|  |      * spin_model_checkpoint.pth.tar (103MB) + SMPL_N_model.npz (88MB)          |  |
-|  |  - Progressive Entity Commit: Entities committed immediately after detection     |  |
-|  |  - Per-Person Mask Commit: Individual masks committed and broadcast upon save     |  |
-|  |  - Progressive Depth Commit: Depth map and spatial photo committed upon save      |  |
-|  |  - Human 3D Reconstruction: SPIN + pure PyTorch SMPL LBS forward deformation      |  |
-|  |  - Scene Assembly Engine: Deterministic multi-person composition & SceneGraph    |  |
-|  |      * Model vs Scene Space: sceneTransform = placement x orient x modelNorm      |  |
-|  |      * Horizontal & depth alignment preserving composition and relative proximity  |  |
-|  |      * Occlusion & overlap analysis with single-view ambiguity reporting          |  |
-|  |      * Partial reconstruction tolerance: unreconstructed entities remain in-scene |  |
-|  |  - Local Disk Persistence: JSON scene graph saved to data/storage/scenes/         |  |
-|  |  - Cancellation Checkpoints: Clean early termination preserving prior assets     |  |
-|  |  - AnalysisPipelineCoordinator: 14 sequential stages with live event stream       |  |
+|  |      * yolov8n-seg.pt (7.1MB) & yolov8n-pose.pt (6.8MB)                           |  |
+|  |      * depth-anything-v2-small/ (95MB safetensors)                                |  |
+|  |      * spin_model_checkpoint.pth.tar (103MB) + SMPL_N_model.npz (84MB)          |  |
+|  |  - Input Validation: 25MP decompression bomb check, 25MB upload cap, no anims    |  |
+|  |  - Depth Estimation: Relative proximity [0, 1] with 2nd/98th percentile scaling   |  |
+|  |  - Human 3D Reconstruction: SPIN + pure PyTorch SMPL LBS (6,890 verts, 13,776 f)  |  |
+|  |  - Multi-Person Scene Assembly Engine: Ground contact, horizontal ordering, depth |  |
+|  |  - DRISHTI Motion: 24-joint skeleton, SMPL 3D regression, LBS rigging weights,   |  |
+|  |    deterministic procedural animation (idle, twist, wave, walk)                   |  |
+|  |  - Atomic Disk Persistence: .tmp buffer & atomic replace for projects and scenes   |  |
 |  +-----------------------------------------------------------------------------------+  |
-|  | Local Filesystem Storage (photos/, masks/, depth/, meshes/, scenes/, skeletons/)  |  |
+|  | Local Sandboxed Storage (photos/, masks/, depth/, meshes/, scenes/, skeletons/)   |  |
 |  +-----------------------------------------------------------------------------------+  |
 +-----------------------------------------------------------------------------------------+
 
