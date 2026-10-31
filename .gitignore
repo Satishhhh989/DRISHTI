@@ -33,6 +33,8 @@ data/models/*.safetensors
 data/models/*.npz
 data/models/*.pth*
 data/models/*.tar
+data/models/*.ckpt
+data/models/*.yaml
 data/models/**/*.pt
 data/models/**/*.bin
 data/models/**/*.onnx
@@ -41,6 +43,8 @@ data/models/**/*.json
 data/models/**/*.npz
 data/models/**/*.pth*
 data/models/**/*.tar
+data/models/**/*.ckpt
+data/models/**/*.yaml
 !data/models/.gitkeep
 !data/models/**/.gitkeep
 *.log

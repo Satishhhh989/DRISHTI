@@ -142,3 +142,4 @@ DRISHTI eliminates misleading hardcoded metrics (e.g. fabricated 0.80 IoU or 0.0
 - When keypoints are present but segmentation mask is absent, `reprojection_error_pixels` is measured, `silhouette_iou` is `None`, and `metric_status = "estimated"`.
 - When both keypoints and masks are verified, full metrics are measured and `metric_status = "measured"`.
 - Synthetic test doubles report explicit `metric_status = "mock"`.
+

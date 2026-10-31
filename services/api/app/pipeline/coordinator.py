@@ -141,7 +141,7 @@ class PipelineCoordinator:
             reconstruction_registry,
         )
 
-        backend_name = (backend or "spin").lower()
+        backend_name = (backend or "hmr2").lower()
         reg_backend = reconstruction_registry.get(backend_name)
         if reg_backend is not None:
             return reg_backend
@@ -162,13 +162,18 @@ class PipelineCoordinator:
 
         if backend_name == "hmr2":
             hmr2_path = model_manager.models_dir / "hmr2" / "epoch=35-step=1000000.ckpt"
-            hmr2_rec = Hmr2HumanReconstructor(
-                checkpoint_path=hmr2_path if hmr2_path.exists() else None,
-                device=device,
-                fallback_reconstructor=spin_reconstructor or MockHumanReconstructor(device=device),
-            )
-            reconstruction_registry.register("hmr2", hmr2_rec)
-            return hmr2_rec
+            if hmr2_path.exists():
+                logger.info(f"Initializing HMR 2.0 (4DHumans) as primary reconstructor backend from {hmr2_path} on {device}")
+                hmr2_rec = Hmr2HumanReconstructor(
+                    checkpoint_path=hmr2_path,
+                    device=device,
+                    fallback_reconstructor=spin_reconstructor or MockHumanReconstructor(device=device),
+                )
+                reconstruction_registry.register("hmr2", hmr2_rec)
+                return hmr2_rec
+            elif spin_reconstructor is not None:
+                logger.warning(f"HMR 2.0 checkpoint not found at {hmr2_path}; falling back to SPIN")
+                return spin_reconstructor
 
         if spin_reconstructor is not None:
             return spin_reconstructor
@@ -731,21 +736,24 @@ class PipelineCoordinator:
                     if img_for_pose is None:
                         img_for_pose = np.zeros((scene.source_image.height, scene.source_image.width, 3), dtype=np.uint8)
 
-                    boxes = [e.detection.bounding_box for e in entities if e.detection and e.detection.bounding_box]
+                    entities_with_boxes = [e for e in entities if e.detection and e.detection.bounding_box]
+                    boxes = [e.detection.bounding_box for e in entities_with_boxes]
                     all_poses = pose_estimator.estimate_poses(img_for_pose, boxes)
 
-                    for entity in entities:
-                        if not entity.detection or not entity.detection.bounding_box:
-                            continue
-                        best_iou = 0.0
-                        best_pose = None
-                        for p in all_poses:
-                            iou = compute_2d_iou(entity.detection.bounding_box, p.bounding_box)
-                            if iou > best_iou:
-                                best_iou = iou
-                                best_pose = p
-                        if best_pose and best_iou > 0.10:
-                            pose_results_by_entity[entity.id] = best_pose
+                    if len(all_poses) == len(entities_with_boxes):
+                        for e, p in zip(entities_with_boxes, all_poses):
+                            pose_results_by_entity[e.id] = p
+                    else:
+                        for entity in entities_with_boxes:
+                            best_iou = 0.0
+                            best_pose = None
+                            for p in all_poses:
+                                iou = compute_2d_iou(entity.detection.bounding_box, p.bounding_box)
+                                if iou > best_iou:
+                                    best_iou = iou
+                                    best_pose = p
+                            if best_pose and best_iou > 0.10:
+                                pose_results_by_entity[entity.id] = best_pose
 
                     event_emitter.emit(
                         job_id=job_id,
@@ -836,6 +844,20 @@ class PipelineCoordinator:
                                 scene_id=scene_id,
                                 entity_id=entity.id,
                             )
+
+                            if rec_result.overlay_png_bytes:
+                                try:
+                                    overlay_filename = f"{scene_id}_{entity.id}_reproj.png"
+                                    asset_manager.register_pipeline_asset(
+                                        content=rec_result.overlay_png_bytes,
+                                        category="depth_visualization",
+                                        filename=overlay_filename,
+                                        mime_type="image/png",
+                                        scene_id=scene_id,
+                                        entity_id=entity.id,
+                                    )
+                                except Exception as ov_err:
+                                    logger.debug(f"Failed to register reprojection overlay asset: {ov_err}")
 
                             # Compute spatial placement in scene coordinates
                             # Canonical scene: +X right, +Y up, +Z forward

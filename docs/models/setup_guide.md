@@ -99,3 +99,4 @@ The human reconstruction pipeline supports three runtime quality presets:
 - **`preview`**: 15 optimization steps, 128x128 silhouette grid, lowest latency (~15 ms).
 - **`high`** (Default): 45 optimization steps, 128x128 silhouette grid, balanced fidelity and speed (~35 ms).
 - **`maximum`**: 80 optimization steps, 256x256 silhouette grid, highest contour accuracy (~75 ms).
+

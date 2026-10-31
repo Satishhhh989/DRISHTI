@@ -22,6 +22,8 @@ from torchvision.models import resnet50
 import trimesh
 
 from app.core.logging import logger
+from app.pipeline.device import device_manager
+from app.pipeline.models import DEFAULT_MODELS_DIR
 from app.schemas.common import BoundingBox2D
 
 
@@ -52,6 +54,7 @@ class HumanReconstructionResult:
     pose_convergence_status: str = "Converged"
     metric_status: str = "measured"  # "measured" | "estimated" | "unavailable" | "mock"
     pelvis_3d: Optional[List[float]] = None
+    overlay_png_bytes: Optional[bytes] = None
     warnings: List[str] = field(default_factory=list)
     processing_time_ms: float = 0.0
 
@@ -205,6 +208,7 @@ def prepare_person_crop(
         "offset": [offset_x, offset_y],
         "is_clipped": is_clipped,
         "aspect_ratio": box_w / box_h,
+        "target_size": tuple(target_size),
     }
 
     return resized, transform_meta
@@ -215,14 +219,25 @@ def prepare_person_crop(
 # ---------------------------------------------------------------------------
 
 def rot6d_to_rotmat(x: torch.Tensor) -> torch.Tensor:
-    """Converts 6D continuous rotation representation to 3x3 rotation matrices.
-    Reference: Zhou et al., 'On the Continuity of Rotation Representations in Neural Networks' (CVPR 2019)
+    """Official 4DHumans / PyTorch3D 6D continuous rotation to 3x3 rotation matrix.
+    Reference: Zhou et al., CVPR 2019; 4D-Humans (Goel et al., 2023)
     """
+    x = x.reshape(-1, 2, 3).permute(0, 2, 1).contiguous()
+    a1 = x[:, :, 0]
+    a2 = x[:, :, 1]
+    b1 = torch.nn.functional.normalize(a1, dim=-1)
+    b2 = torch.nn.functional.normalize(a2 - torch.einsum("bi,bi->b", b1, a2).unsqueeze(-1) * b1, dim=-1)
+    b3 = torch.linalg.cross(b1, b2, dim=-1)
+    return torch.stack((b1, b2, b3), dim=-1)
+
+
+def rot6d_to_rotmat_spin(x: torch.Tensor) -> torch.Tensor:
+    """Legacy SPIN 6D rotation mapping with transposed interleaving."""
     x = x.view(-1, 3, 2)
     b1 = torch.nn.functional.normalize(x[:, :, 0], dim=-1)
     dot_prod = torch.sum(b1 * x[:, :, 1], dim=-1, keepdim=True)
     b2 = torch.nn.functional.normalize(x[:, :, 1] - dot_prod * b1, dim=-1)
-    b3 = torch.cross(b1, b2, dim=-1)
+    b3 = torch.linalg.cross(b1, b2, dim=-1)
     return torch.stack([b1, b2, b3], dim=-1)
 
 
@@ -241,14 +256,13 @@ class SMPLForwardLayer(nn.Module):
         self.kintree_table = npz_data["kintree_table"]
         self.faces = npz_data["f"].astype(np.int32)
 
-    def forward(self, pose_rot6d: torch.Tensor, shape_betas: torch.Tensor) -> torch.Tensor:
+    def forward(
+        self,
+        pose: torch.Tensor,
+        shape_betas: torch.Tensor,
+        rot6d_mode: str = "hmr2",
+    ) -> torch.Tensor:
         """Deforms SMPL template using shape blend shapes, pose blend shapes, and kinematic skinning."""
-        # pose_rot6d: (24, 6) or (1, 144) -> (24, 6)
-        if pose_rot6d.dim() == 2 and pose_rot6d.shape[-1] == 144:
-            pose_rot6d = pose_rot6d.view(24, 6)
-        elif pose_rot6d.dim() == 1 and len(pose_rot6d) == 144:
-            pose_rot6d = pose_rot6d.view(24, 6)
-
         if shape_betas.dim() == 2:
             shape_betas = shape_betas.squeeze(0)
 
@@ -258,17 +272,51 @@ class SMPLForwardLayer(nn.Module):
         # 2. Rest Joint Positions: J = J_regressor * V_shaped
         J = torch.matmul(self.J_regressor, v_shaped)  # (24, 3)
 
-        # 3. Compute 3x3 rotation matrices from 6D representation
-        R = rot6d_to_rotmat(pose_rot6d)  # (24, 3, 3)
+        # 3. Compute 3x3 rotation matrices from 6D representation or use directly
+        if pose.dim() == 3 and pose.shape[-2:] == (3, 3):
+            R = pose
+        elif pose.dim() == 4 and pose.shape[-2:] == (3, 3):
+            R = pose.squeeze(0) if pose.shape[0] == 1 else pose[0]
+        else:
+            if pose.dim() == 2 and pose.shape[-1] == 144:
+                pose = pose.view(24, 6)
+            elif pose.dim() == 1 and len(pose) == 144:
+                pose = pose.view(24, 6)
+            if rot6d_mode == "spin":
+                R = rot6d_to_rotmat_spin(pose)
+            else:
+                R = rot6d_to_rotmat(pose)
 
         # 4. Pose Blend Shapes: 23 non-root joints
-        I = torch.eye(3, device=pose_rot6d.device).unsqueeze(0).expand(23, -1, -1)
-        rot_diff = (R[1:] - I).view(-1)  # 23 * 9 = 207
+        I = torch.eye(3, device=R.device).unsqueeze(0).expand(23, -1, -1)
+        rot_diff = (R[1:] - I).reshape(-1)  # 23 * 9 = 207
         v_posed = v_shaped + torch.einsum("vcp,p->vc", self.posedirs, rot_diff)
 
         # 5. Kinematic Forward Hierarchy
         A = [None] * 24
-        A[0] = torch.eye(4, device=pose_rot6d.device)
+        A[0] = torch.eye(4, device=R.device)
+        A[0][:3, :3] = R[0]
+        A[0][:3, 3] = J[0]
+
+        for i in range(1, 24):
+            parent = int(self.kintree_table[0, i])
+            A_rel = torch.eye(4, device=R.device)
+            A_rel[:3, :3] = R[i]
+            A_rel[:3, 3] = J[i] - J[parent]
+            A[i] = torch.matmul(A[parent], A_rel)
+
+        # 6. Skinning Transforms: G_k = A_k * [I, -J_k; 0, 1]
+        G = torch.stack(A, dim=0)
+        init_bonemat = torch.eye(4, device=R.device).unsqueeze(0).expand(24, -1, -1).clone()
+        init_bonemat[:, :3, 3] = -J
+        G = torch.matmul(G, init_bonemat)
+
+        # 7. Linear Blend Skinning
+        homo_v = torch.cat([v_posed, torch.ones(len(v_posed), 1, device=R.device)], dim=1)
+        T = torch.einsum("vk,kab->vab", self.weights, G)
+        v_final = torch.einsum("vab,vb->va", T, homo_v)[:, :3]
+
+        return v_final
         A[0][:3, :3] = R[0]
         A[0][:3, 3] = J[0]
 
@@ -364,9 +412,10 @@ class SMPLPoseFitter:
         (8, "right_ankle", 1.6),      # R ankle
     ]
 
-    def __init__(self, smpl: SMPLForwardLayer, weights: np.ndarray, device: torch.device):
+    def __init__(self, smpl: SMPLForwardLayer, weights: np.ndarray, device: torch.device, rot6d_mode: str = "hmr2"):
         self.smpl = smpl
         self.device = device
+        self.rot6d_mode = rot6d_mode
 
         # Precompute body part indices for fast articulated silhouette rasterization
         bone_per_vert = np.argmax(weights, axis=1)
@@ -398,7 +447,9 @@ class SMPLPoseFitter:
 
     def _make_rot6d(self, rotmat: torch.Tensor) -> torch.Tensor:
         """Extracts 6D rotation representation (first two columns) from 3x3 matrix."""
-        return rotmat[:, :2].contiguous().view(-1)
+        if self.rot6d_mode == "spin":
+            return rotmat[:, :2].contiguous().view(-1)
+        return torch.cat([rotmat[:, 0], rotmat[:, 1]], dim=-1)
 
     def fit(
         self,
@@ -409,6 +460,7 @@ class SMPLPoseFitter:
         transform_meta: Dict[str, Any],
         mask_gray: Optional[Union[bytes, np.ndarray]] = None,
         quality_preset: str = "high",
+        use_heuristics: bool = True,
     ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor, Dict[str, Any]]:
         """Optimizes SMPL pose, shape, and camera against observed 2D keypoints and silhouette."""
         # 1. Preset configuration
@@ -542,43 +594,44 @@ class SMPLPoseFitter:
         # 4. Multi-Hypothesis Pose Candidate Selection
         candidates: List[torch.Tensor] = [init_pose.clone().view(24, 6)]
 
-        # Candidate: Seated Pose Hypothesis
-        if is_seated:
-            c_seated = init_pose.clone().view(24, 6)
-            theta_hip = -1.45  # 83 deg forward flexion
-            R_hip = torch.tensor([
-                [1.0, 0.0, 0.0],
-                [0.0, np.cos(theta_hip), -np.sin(theta_hip)],
-                [0.0, np.sin(theta_hip), np.cos(theta_hip)]
-            ], dtype=torch.float32, device=self.device)
-            theta_knee = 1.55  # 89 deg knee flexion
-            R_knee = torch.tensor([
-                [1.0, 0.0, 0.0],
-                [0.0, np.cos(theta_knee), -np.sin(theta_knee)],
-                [0.0, np.sin(theta_knee), np.cos(theta_knee)]
-            ], dtype=torch.float32, device=self.device)
-            c_seated[1] = self._make_rot6d(R_hip)
-            c_seated[2] = self._make_rot6d(R_hip)
-            c_seated[4] = self._make_rot6d(R_knee)
-            c_seated[5] = self._make_rot6d(R_knee)
-            candidates.append(c_seated)
+        if use_heuristics:
+            # Candidate: Seated Pose Hypothesis
+            if is_seated:
+                c_seated = init_pose.clone().view(24, 6)
+                theta_hip = -1.45  # 83 deg forward flexion
+                R_hip = torch.tensor([
+                    [1.0, 0.0, 0.0],
+                    [0.0, np.cos(theta_hip), -np.sin(theta_hip)],
+                    [0.0, np.sin(theta_hip), np.cos(theta_hip)]
+                ], dtype=torch.float32, device=self.device)
+                theta_knee = 1.55  # 89 deg knee flexion
+                R_knee = torch.tensor([
+                    [1.0, 0.0, 0.0],
+                    [0.0, np.cos(theta_knee), -np.sin(theta_knee)],
+                    [0.0, np.sin(theta_knee), np.cos(theta_knee)]
+                ], dtype=torch.float32, device=self.device)
+                c_seated[1] = self._make_rot6d(R_hip)
+                c_seated[2] = self._make_rot6d(R_hip)
+                c_seated[4] = self._make_rot6d(R_knee)
+                c_seated[5] = self._make_rot6d(R_knee)
+                candidates.append(c_seated)
 
-        # Candidate: Crossed-Arms Pose Hypothesis
-        if is_crossed:
-            c_crossed = init_pose.clone().view(24, 6)
-            R_l_sh = torch.tensor([
-                [0.707, -0.707, 0.0],
-                [0.707, 0.707, 0.0],
-                [0.0, 0.0, 1.0]
-            ], dtype=torch.float32, device=self.device)
-            R_l_el = torch.tensor([
-                [0.0, -1.0, 0.0],
-                [1.0, 0.0, 0.0],
-                [0.0, 0.0, 1.0]
-            ], dtype=torch.float32, device=self.device)
-            c_crossed[16] = self._make_rot6d(R_l_sh)
-            c_crossed[18] = self._make_rot6d(R_l_el)
-            candidates.append(c_crossed)
+            # Candidate: Crossed-Arms Pose Hypothesis
+            if is_crossed:
+                c_crossed = init_pose.clone().view(24, 6)
+                R_l_sh = torch.tensor([
+                    [0.707, -0.707, 0.0],
+                    [0.707, 0.707, 0.0],
+                    [0.0, 0.0, 1.0]
+                ], dtype=torch.float32, device=self.device)
+                R_l_el = torch.tensor([
+                    [0.0, -1.0, 0.0],
+                    [1.0, 0.0, 0.0],
+                    [0.0, 0.0, 1.0]
+                ], dtype=torch.float32, device=self.device)
+                c_crossed[16] = self._make_rot6d(R_l_sh)
+                c_crossed[18] = self._make_rot6d(R_l_el)
+                candidates.append(c_crossed)
 
         # Evaluate candidate 2D reprojection error and select best starting basin
         best_cand = candidates[0]
@@ -586,7 +639,7 @@ class SMPLPoseFitter:
         eval_cam = init_cam.view(1, 3)
         with torch.no_grad():
             for cand in candidates:
-                v_init = self.smpl(cand, init_shape)
+                v_init = self.smpl(cand, init_shape, rot6d_mode=self.rot6d_mode)
                 j_all = torch.matmul(self.smpl.J_regressor, v_init)
                 j_all_2d = j_all.squeeze(0) if j_all.dim() == 3 and j_all.shape[0] == 1 else j_all
                 j_init = self.select_joints(j_all_2d, smpl_indices)
@@ -636,7 +689,7 @@ class SMPLPoseFitter:
         # 6. Optimization Loop with Anatomical Constraints and Differentiable Silhouette
         for step in range(n_steps):
             optimizer.zero_grad()
-            v_final = self.smpl(opt_pose, opt_shape)
+            v_final = self.smpl(opt_pose, opt_shape, rot6d_mode=self.rot6d_mode)
             j_3d = torch.matmul(self.smpl.J_regressor, v_final)
             j_3d_2d = j_3d.squeeze(0) if j_3d.dim() == 3 and j_3d.shape[0] == 1 else j_3d
             j_sel = self.select_joints(j_3d_2d, smpl_indices)
@@ -704,7 +757,7 @@ class SMPLPoseFitter:
 
         # 7. Post-Fitting Validation Metrics & Truthful Stance Classification
         with torch.no_grad():
-            final_v = self.smpl(opt_pose, opt_shape)
+            final_v = self.smpl(opt_pose, opt_shape, rot6d_mode=self.rot6d_mode)
             final_j = torch.matmul(self.smpl.J_regressor, final_v)
             final_j_2d = final_j.squeeze(0) if final_j.dim() == 3 and final_j.shape[0] == 1 else final_j
             final_j_sel = self.select_joints(final_j_2d, smpl_indices)
@@ -780,6 +833,163 @@ class SMPLPoseFitter:
             "stance_description": stance_desc,
             "observed_keypoints_count": len(target_coords),
             "pose_convergence_status": f"Converged (Residual Loss: {final_loss_val:.4f})",
+            "metric_status": metric_status,
+        }
+
+    def evaluate(
+        self,
+        pose: torch.Tensor,
+        shape: torch.Tensor,
+        cam: torch.Tensor,
+        pose_result: Optional[Any],
+        transform_meta: Dict[str, Any],
+        mask_gray: Optional[Union[bytes, np.ndarray]] = None,
+        quality_preset: str = "high",
+    ) -> Dict[str, Any]:
+        """Evaluates quantitative metrics (reprojection error, silhouette IoU, stance)
+        for given SMPL parameters without altering or optimizing them."""
+        sq_dim = transform_meta.get("square_dim", 224)
+        off_x, off_y = transform_meta.get("offset", [0, 0])
+        cx1, cy1 = transform_meta.get("crop_pixels", [0, 0, 0, 0])[:2]
+        orig_w, orig_h = transform_meta.get("original_image_size", [1, 1])
+        s_res = 128
+
+        target_coords: List[List[float]] = []
+        smpl_indices: List[int] = []
+
+        kps_dict = pose_result.keypoints if (pose_result and hasattr(pose_result, "keypoints")) else {}
+
+        if "left_hip" in kps_dict and "right_hip" in kps_dict:
+            lh = kps_dict["left_hip"]
+            rh = kps_dict["right_hip"]
+            if lh.confidence >= 0.25 and rh.confidence >= 0.25:
+                px = ((lh.x_norm + rh.x_norm) / 2.0) * orig_w
+                py = ((lh.y_norm + rh.y_norm) / 2.0) * orig_h
+                x_sq = (px - cx1) + off_x
+                y_sq = (py - cy1) + off_y
+                target_coords.append([(x_sq / sq_dim) * 2.0 - 1.0, (y_sq / sq_dim) * 2.0 - 1.0])
+                smpl_indices.append(0)
+
+        for smpl_idx, name, _ in self.JOINT_CORRESPONDENCES:
+            if name in ("pelvis", "neck"):
+                continue
+            kp = kps_dict.get(name)
+            if kp and getattr(kp, "confidence", 0.0) >= 0.25:
+                px = kp.x_norm * orig_w
+                py = kp.y_norm * orig_h
+                x_sq = (px - cx1) + off_x
+                y_sq = (py - cy1) + off_y
+                target_coords.append([(x_sq / sq_dim) * 2.0 - 1.0, (y_sq / sq_dim) * 2.0 - 1.0])
+                smpl_indices.append(smpl_idx)
+
+        if len(target_coords) < 4:
+            return {
+                "reprojection_error_pixels": None,
+                "reprojection_error_normalized": None,
+                "silhouette_iou": None,
+                "quality_score": None,
+                "quality_preset": quality_preset,
+                "stance_description": "Observed Posture (Insufficient Keypoints)",
+                "observed_keypoints_count": len(target_coords),
+                "pose_convergence_status": "Direct Neural Prediction (< 4 2D joints)",
+                "metric_status": "unavailable",
+            }
+
+        target_2d = torch.tensor(target_coords, dtype=torch.float32, device=self.device)
+
+        with torch.no_grad():
+            pose_eval = pose.view(24, 6) if pose.dim() == 2 and pose.shape[-1] == 144 else pose
+            v_eval = self.smpl(pose_eval, shape, rot6d_mode=self.rot6d_mode)
+            j_eval = torch.matmul(self.smpl.J_regressor, v_eval)
+            j_eval_2d = j_eval.squeeze(0) if j_eval.dim() == 3 and j_eval.shape[0] == 1 else j_eval
+            j_sel = self.select_joints(j_eval_2d, smpl_indices)
+
+            scale_val = cam[0, 0].item() if cam.dim() == 2 else cam[0].item()
+            tx_val = cam[0, 1].item() if cam.dim() == 2 else cam[1].item()
+            ty_val = cam[0, 2].item() if cam.dim() == 2 else cam[2].item()
+
+            proj_u = (scale_val * j_sel[:, 0] + tx_val).cpu().numpy()
+            proj_v = (scale_val * j_sel[:, 1] + ty_val).cpu().numpy()
+            target_u = target_2d[:, 0].cpu().numpy()
+            target_v = target_2d[:, 1].cpu().numpy()
+
+            diff_u = proj_u - target_u
+            diff_v = proj_v - target_v
+            norm_dist = np.sqrt(diff_u ** 2 + diff_v ** 2)
+            reproj_err_norm = float(np.mean(norm_dist))
+            reproj_err_px = float(reproj_err_norm * (sq_dim / 2.0))
+
+            # Stance classification from predicted kinematics
+            R_eval = rot6d_to_rotmat(pose_eval)
+            knee_l = round(float(torch.atan2(R_eval[4, 2, 1], R_eval[4, 1, 1]).item() * 180.0 / np.pi), 1)
+            knee_r = round(float(torch.atan2(R_eval[5, 2, 1], R_eval[5, 1, 1]).item() * 180.0 / np.pi), 1)
+            max_knee = max(abs(knee_l), abs(knee_r))
+
+            final_j_hip = self.select_joints(j_eval_2d, [1])
+            final_j_knee = self.select_joints(j_eval_2d, [4])
+            dy_thigh_3d = final_j_hip[0, 1].item() - final_j_knee[0, 1].item()
+
+            if max_knee > 65.0 or abs(dy_thigh_3d) < 0.14:
+                stance_desc = f"Seated Posture (Knee Flexion: {max_knee:.1f}°)"
+            else:
+                stance_desc = "Standing Posture (Upright)"
+
+            # Silhouette IoU
+            silhouette_iou: Optional[float] = None
+            if mask_gray is not None:
+                try:
+                    if isinstance(mask_gray, bytes):
+                        gt_arr = cv2.imdecode(np.frombuffer(mask_gray, np.uint8), cv2.IMREAD_GRAYSCALE)
+                    else:
+                        gt_arr = mask_gray
+                    if gt_arr is not None and gt_arr.size > 0:
+                        clamp_x1, clamp_y1, clamp_x2, clamp_y2 = transform_meta.get("crop_pixels", [0, 0, orig_w, orig_h])
+                        gt_crop = gt_arr[clamp_y1:clamp_y2, clamp_x1:clamp_x2]
+                        if gt_crop.size > 0:
+                            gt_sq = np.zeros((sq_dim, sq_dim), dtype=np.uint8)
+                            gt_sq[off_y:off_y + gt_crop.shape[0], off_x:off_x + gt_crop.shape[1]] = gt_crop
+                            gt_resized = cv2.resize(gt_sq, (s_res, s_res), interpolation=cv2.INTER_NEAREST)
+                            gt_mask_binary = (gt_resized > 128).astype(np.uint8)
+
+                            v_np = v_eval.detach().cpu().numpy()
+                            if v_np.ndim == 3:
+                                v_np = v_np[0]
+                            pts_u = scale_val * v_np[:, 0] + tx_val
+                            pts_v = scale_val * v_np[:, 1] + ty_val
+                            pts_x = np.clip((pts_u + 1.0) * 0.5 * s_res, 0, s_res - 1).astype(np.int32)
+                            pts_y = np.clip((pts_v + 1.0) * 0.5 * s_res, 0, s_res - 1).astype(np.int32)
+                            pts_2d = np.stack([pts_x, pts_y], axis=1)
+
+                            mask_proj = np.zeros((s_res, s_res), dtype=np.uint8)
+                            for _, idxs in self.part_indices.items():
+                                if len(idxs) > 2:
+                                    hull = cv2.convexHull(pts_2d[idxs])
+                                    cv2.fillPoly(mask_proj, [hull], 255)
+
+                            intersection = np.logical_and(mask_proj > 128, gt_mask_binary > 0).sum()
+                            union = np.logical_or(mask_proj > 128, gt_mask_binary > 0).sum()
+                            if union > 0:
+                                silhouette_iou = round(float(intersection / union), 3)
+                except Exception as e:
+                    logger.debug(f"Silhouette IoU evaluation: {e}")
+
+            kp_score = max(0.0, 1.0 - (reproj_err_px / 48.0))
+            if silhouette_iou is not None:
+                quality_score = round(float(np.clip(0.55 * kp_score + 0.45 * silhouette_iou, 0.15, 0.98)), 3)
+                metric_status = "measured"
+            else:
+                quality_score = round(float(np.clip(kp_score, 0.15, 0.98)), 3)
+                metric_status = "estimated"
+
+        return {
+            "reprojection_error_pixels": round(reproj_err_px, 2),
+            "reprojection_error_normalized": round(reproj_err_norm, 4),
+            "silhouette_iou": silhouette_iou,
+            "quality_score": quality_score,
+            "quality_preset": quality_preset,
+            "stance_description": stance_desc,
+            "observed_keypoints_count": len(target_coords),
+            "pose_convergence_status": "Direct Neural Prediction (HMR 2.0 ViT)",
             "metric_status": metric_status,
         }
 
@@ -938,6 +1148,7 @@ class SpinHumanReconstructor(HumanReconstructor):
             smpl=self.smpl,
             weights=npz_data["weights"],
             device=self.device,
+            rot6d_mode="spin",
         )
 
         # 3. Load mean parameters
@@ -1002,7 +1213,7 @@ class SpinHumanReconstructor(HumanReconstructor):
         )
 
         with torch.no_grad():
-            vertices_tensor = self.smpl(fitted_pose, fitted_shape)
+            vertices_tensor = self.smpl(fitted_pose, fitted_shape, rot6d_mode="spin")
             joints_tensor = torch.matmul(self.smpl.J_regressor, vertices_tensor)
 
         vertices = vertices_tensor.detach().cpu().numpy().astype(np.float32)
@@ -1073,47 +1284,89 @@ class SpinHumanReconstructor(HumanReconstructor):
 
 
 class Hmr2HumanReconstructor(HumanReconstructor):
-    """Modular adapter for HMR 2.0 / 4DHumans (ViT-H/B backbone + SMPL cross-attention transformer).
+    """Production human reconstruction backend powered by 4DHumans / HMR 2.0.
     
-    Evaluated for high-precision in-the-wild monocular human mesh recovery.
-    Outputs canonical SMPL parameters directly (6,890 vertices, 24 joints), natively compatible
+    Vision Transformer (ViT-Huge) backbone with SMPL Cross-Attention Decoder Head.
+    Predicts canonical SMPL parameters directly (6,890 vertices, 24 joints), natively compatible
     with DRISHTI kinematic rigging, animation, and GLB scene export.
-    Falls back gracefully to SpinHumanReconstructor when weights are not locally installed.
+    Executes actual neural inference on Apple Silicon MPS, NVIDIA CUDA, or CPU.
     """
 
     def __init__(
         self,
         checkpoint_path: Optional[Path] = None,
+        smpl_npz_path: Optional[Path] = None,
+        mean_params_path: Optional[Path] = None,
         device: Optional[torch.device] = None,
         fallback_reconstructor: Optional[HumanReconstructor] = None,
     ):
-        self.model_name = "hmr2"
+        self.model_name = "HMR 2.0 (4DHumans)"
         self.model_version = "2.0.0"
-        self.device = device or torch.device("cpu")
+        self.device = device or device_manager.get_torch_device()
         self.checkpoint_path = checkpoint_path
+        if self.checkpoint_path is None and fallback_reconstructor is None:
+            default_ckpt = (DEFAULT_MODELS_DIR / "hmr2" / "epoch=35-step=1000000.ckpt").resolve()
+            if default_ckpt.exists():
+                self.checkpoint_path = default_ckpt
+        self.smpl_npz_path = smpl_npz_path or (DEFAULT_MODELS_DIR / "human_reconstruction" / "SMPL_N_model.npz").resolve()
+        self.mean_params_path = mean_params_path or (DEFAULT_MODELS_DIR / "human_reconstruction" / "smpl_mean_params.npz").resolve()
         self._fallback = fallback_reconstructor
         self._model = None
         self.is_available = False
+        self.is_real_hmr2 = False
+        self.smpl: Optional[SMPLForwardLayer] = None
+        self.faces: Optional[np.ndarray] = None
+        self.pose_fitter: Optional[SMPLPoseFitter] = None
 
-        if checkpoint_path and checkpoint_path.exists():
+        # 1. Initialize SMPL Forward Layer
+        if self.smpl_npz_path.exists():
             try:
-                logger.info(f"Checking HMR 2.0 (4DHumans) checkpoint at {checkpoint_path}...")
-                # When weights are installed in data/models/hmr2/
-                self.is_available = True
+                npz_data = np.load(str(self.smpl_npz_path), allow_pickle=True)
+                self.smpl = SMPLForwardLayer(npz_data).to(self.device)
+                self.faces = self.smpl.faces
+                self.pose_fitter = SMPLPoseFitter(self.smpl, weights=npz_data["weights"], device=self.device)
             except Exception as e:
-                logger.warning(f"Could not load HMR 2.0 checkpoint: {e}")
+                logger.error(f"Failed to load SMPL forward layer for HMR 2.0: {e}")
+
+        # 2. Check and load HMR 2.0 checkpoint
+        if (
+            self.checkpoint_path is not None
+            and self.checkpoint_path.exists()
+            and self.checkpoint_path.stat().st_size > 1000000
+            and self.smpl is not None
+        ):
+            try:
+                from app.pipeline.hmr2_model import HMR2Network
+                logger.info(f"Loading official HMR 2.0 weights from {self.checkpoint_path}...")
+                self._model = HMR2Network.load_from_checkpoint(
+                    checkpoint_path=self.checkpoint_path,
+                    mean_params_path=self.mean_params_path if self.mean_params_path.exists() else None,
+                    device=self.device,
+                )
+                self.is_available = True
+                self.is_real_hmr2 = True
+                logger.info(f"HMR 2.0 model loaded successfully on device: {self.device}")
+            except Exception as e:
+                logger.error(f"Failed to load HMR 2.0 model weights: {e}")
+                self._model = None
                 self.is_available = False
+                self.is_real_hmr2 = False
         else:
-            logger.info("HMR 2.0 checkpoint not found; registered in fallback standby mode.")
+            if self.checkpoint_path is not None and not self.checkpoint_path.exists():
+                logger.info(f"HMR 2.0 checkpoint not found at {self.checkpoint_path}; registered in standby mode.")
+            self.is_available = False
+            self.is_real_hmr2 = False
 
     def get_capabilities(self) -> Dict[str, Any]:
         return {
             "model_name": "HMR 2.0 (4DHumans)",
-            "architecture": "Vision Transformer (ViT-H/B) + SMPL Cross-Attention Decoder",
+            "architecture": "Vision Transformer (ViT-Huge) + SMPL Cross-Attention Decoder",
             "is_articulated": True,
             "output_format": "SMPL Canonical (6,890 vertices, 24 joints)",
             "weights_installed": self.is_available,
-            "license": "CC-BY-NC 4.0 (Non-Commercial Research; requires SMPL license)",
+            "is_real_hmr2": self.is_real_hmr2,
+            "device": str(self.device),
+            "license": "Code: MIT; Checkpoint & SMPL: CC-BY-NC 4.0 (Non-Commercial Research; requires SMPL license)",
             "recommended_device": "mps (Apple Silicon) or cuda (NVIDIA)",
             "vram_recommended_mb": 4096,
         }
@@ -1126,10 +1379,13 @@ class Hmr2HumanReconstructor(HumanReconstructor):
         depth_stats: Optional[Dict[str, Any]] = None,
         pose_result: Optional[Any] = None,
         quality_preset: str = "high",
+        refine_pose: bool = False,
     ) -> HumanReconstructionResult:
+        t0 = time.time()
+
         if not self.is_available or self._model is None:
             if self._fallback is not None:
-                logger.debug("HMR 2.0 weights not found; executing through SPIN production reconstructor.")
+                logger.info("HMR 2.0 weights not found; executing through fallback reconstructor.")
                 res = self._fallback.reconstruct(
                     image_rgb=image_rgb,
                     bounding_box=bounding_box,
@@ -1139,19 +1395,168 @@ class Hmr2HumanReconstructor(HumanReconstructor):
                     quality_preset=quality_preset,
                 )
                 res.warnings.append(
-                    "HMR 2.0 model weights not found in data/models/hmr2/; executed via SPIN production engine."
+                    "HMR 2.0 model weights not found in data/models/hmr2/; executed via fallback engine."
                 )
                 return res
-            raise RuntimeError("HMR 2.0 weights not installed and no fallback reconstructor configured.")
+            raise RuntimeError(
+                f"HMR 2.0 checkpoint not found at {self.checkpoint_path}. "
+                "Download epoch=35-step=1000000.ckpt into data/models/hmr2/ using ModelManager.download_model('hmr2')."
+            )
 
-        # If HMR 2.0 neural model is loaded, inference runs here
-        return self._fallback.reconstruct(
-            image_rgb=image_rgb,
-            bounding_box=bounding_box,
-            mask_gray=mask_gray,
-            depth_stats=depth_stats,
-            pose_result=pose_result,
+        # 1. Prepare 256x256 square crop preserving aspect ratio
+        crop_rgb, transform_meta = prepare_person_crop(
+            image_rgb, bounding_box, padding=0.2, target_size=(256, 256)
+        )
+
+        # 2. ImageNet normalization: mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]
+        mean = np.array([0.485, 0.456, 0.406], dtype=np.float32)
+        std = np.array([0.229, 0.224, 0.225], dtype=np.float32)
+        img_norm = (crop_rgb.astype(np.float32) / 255.0 - mean) / std
+        img_tensor = torch.from_numpy(img_norm).permute(2, 0, 1).unsqueeze(0).float().to(self.device)
+
+        # 3. Real HMR 2.0 Neural Inference
+        with torch.no_grad():
+            out = self._model(img_tensor)
+
+        pred_pose_6d = out["pose_6d"]  # (1, 144)
+        pred_shape = out["betas"]      # (1, 10)
+        pred_cam = out["pred_cam"]      # (1, 3)
+
+        # 4. Optional refinement vs Raw Neural Output
+        # For "ultra" preset or explicit refine_pose, run gradient fitting without heuristics
+        should_refine = (refine_pose or quality_preset == "ultra") and self.pose_fitter is not None
+        if should_refine:
+            fitted_pose, fitted_shape, fitted_cam, metrics = self.pose_fitter.fit(
+                init_pose=pred_pose_6d,
+                init_shape=pred_shape,
+                init_cam=pred_cam,
+                pose_result=pose_result,
+                transform_meta=transform_meta,
+                mask_gray=mask_gray,
+                quality_preset=quality_preset,
+                use_heuristics=False,
+            )
+            convergence_status = "HMR 2.0 ViT + SMPLPoseFitter Refined"
+        else:
+            fitted_pose = pred_pose_6d
+            fitted_shape = pred_shape
+            fitted_cam = pred_cam
+            if self.pose_fitter is not None:
+                metrics = self.pose_fitter.evaluate(
+                    pose=fitted_pose,
+                    shape=fitted_shape,
+                    cam=fitted_cam,
+                    pose_result=pose_result,
+                    transform_meta=transform_meta,
+                    mask_gray=mask_gray,
+                    quality_preset=quality_preset,
+                )
+            else:
+                metrics = {
+                    "reprojection_error_pixels": None,
+                    "reprojection_error_normalized": None,
+                    "silhouette_iou": None,
+                    "quality_score": 0.85,
+                    "quality_preset": quality_preset,
+                    "stance_description": "Standing Posture (Upright)",
+                    "observed_keypoints_count": 0,
+                    "pose_convergence_status": "HMR 2.0 ViT Direct Inference",
+                    "metric_status": "estimated",
+                }
+            convergence_status = "HMR 2.0 ViT Direct Inference"
+
+        # 5. Forward SMPL deformation
+        with torch.no_grad():
+            pose_for_smpl = fitted_pose.view(24, 6) if fitted_pose.dim() == 2 and fitted_pose.shape[-1] == 144 else fitted_pose
+            vertices_tensor = self.smpl(pose_for_smpl, fitted_shape)
+            joints_tensor = torch.matmul(self.smpl.J_regressor, vertices_tensor)
+
+        vertices = vertices_tensor.detach().cpu().numpy().astype(np.float32)
+        if vertices.ndim == 3:
+            vertices = vertices[0]
+
+        joints_np = joints_tensor.detach().cpu().numpy()
+        if joints_np.ndim == 3:
+            joints_np = joints_np[0]
+
+        pelvis_raw = joints_np[0]
+        pelvis_3d = [float(pelvis_raw[0]), float(-pelvis_raw[1]), float(-pelvis_raw[2])]
+
+        # 6. OpenCV (+X right, +Y down, +Z depth) -> Three.js (+X right, +Y up, +Z front)
+        vertices[:, 1] = -vertices[:, 1]
+        vertices[:, 2] = -vertices[:, 2]
+
+        faces = self.faces.copy()
+
+        # 7. Validate geometry and export GLB
+        is_valid, warnings = validate_mesh_geometry(vertices, faces)
+        if transform_meta.get("is_clipped", False):
+            warnings.append("Person is partially clipped by photo frame boundaries; peripheral limbs may be approximated.")
+
+        normals = compute_mesh_normals(vertices, faces)
+        v_min = vertices.min(axis=0).tolist()
+        v_max = vertices.max(axis=0).tolist()
+        dims = (vertices.max(axis=0) - vertices.min(axis=0)).tolist()
+
+        glb_bytes = export_mesh_glb(vertices, faces, normals, name="hmr2_human")
+
+        cam_values = fitted_cam.squeeze(0).detach().cpu().numpy().tolist() if isinstance(fitted_cam, torch.Tensor) else [1.0, 0.0, 0.0]
+        camera_params = {
+            "scale": float(cam_values[0]),
+            "tx": float(cam_values[1]),
+            "ty": float(cam_values[2]),
+        }
+
+        # 8. Reprojection diagnostic overlay
+        overlay_png_bytes = None
+        try:
+            from app.pipeline.reprojection import generate_reprojection_overlay
+            obs_kps = pose_result.keypoints if (pose_result and hasattr(pose_result, "keypoints")) else None
+            overlay_rgb, reproj_diag = generate_reprojection_overlay(
+                image_rgb=image_rgb,
+                joints_3d=joints_np,
+                camera_params=camera_params,
+                transform_meta=transform_meta,
+                bounding_box=bounding_box,
+                observed_keypoints=obs_kps,
+            )
+            if reproj_diag.mean_reprojection_error_pixels is not None:
+                metrics["reprojection_error_pixels"] = reproj_diag.mean_reprojection_error_pixels
+
+            is_ok, enc_buf = cv2.imencode(".png", cv2.cvtColor(overlay_rgb, cv2.COLOR_RGB2BGR))
+            if is_ok:
+                overlay_png_bytes = enc_buf.tobytes()
+        except Exception as diag_err:
+            logger.debug(f"Reprojection overlay generation: {diag_err}")
+
+        return HumanReconstructionResult(
+            vertices=vertices,
+            faces=faces,
+            normals=normals,
+            bounds_min=v_min,
+            bounds_max=v_max,
+            dimensions=dims,
+            glb_bytes=glb_bytes,
+            model_name=self.model_name,
+            model_version=self.model_version,
+            device=str(self.device),
+            pose_params=fitted_pose.squeeze(0).detach().cpu().numpy(),
+            shape_params=fitted_shape.squeeze(0).detach().cpu().numpy(),
+            camera_params=camera_params,
+            texture_availability="none",
+            quality_score=metrics.get("quality_score"),
             quality_preset=quality_preset,
+            reprojection_error_pixels=metrics.get("reprojection_error_pixels"),
+            reprojection_error_normalized=metrics.get("reprojection_error_normalized"),
+            silhouette_iou=metrics.get("silhouette_iou"),
+            stance_description=metrics.get("stance_description", "Standing Posture (Upright)"),
+            observed_keypoints_count=metrics.get("observed_keypoints_count", 0),
+            pose_convergence_status=convergence_status,
+            metric_status=metrics.get("metric_status", "measured"),
+            pelvis_3d=pelvis_3d,
+            overlay_png_bytes=overlay_png_bytes,
+            warnings=warnings,
+            processing_time_ms=(time.time() - t0) * 1000.0,
         )
 
 

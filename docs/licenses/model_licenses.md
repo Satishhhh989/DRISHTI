@@ -40,3 +40,4 @@ For commercial or closed-source enterprise deployments of DRISHTI:
 ## 4. Local-First Air-Gapped Privacy
 
 DRISHTI does not phone home, upload imagery to third-party cloud APIs, or transmit user photographs across the network. All models run entirely on the user's local machine (Apple Silicon MPS or NVIDIA GPU), guaranteeing data privacy, confidentiality, and compliance with strict data-protection regulations (GDPR, HIPAA).
+

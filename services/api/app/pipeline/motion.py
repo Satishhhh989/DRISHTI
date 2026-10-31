@@ -15,6 +15,7 @@ from typing import Any, Dict, List, Optional, Tuple
 import numpy as np
 
 from app.core.logging import logger
+from app.pipeline.assembly import compute_2d_iou
 from app.schemas.common import BoundingBox2D, Transform
 from app.schemas.scene import (
     AnimationClipData,
@@ -362,6 +363,52 @@ class YoloPoseEstimator(IPoseEstimator):
                     model_name=self.model_name,
                 )
             )
+
+        if entity_boxes is not None:
+            if not poses:
+                return []
+
+            matched: List[Optional[PoseEstimationResult]] = [None] * len(entity_boxes)
+            unassigned_pose_indices = set(range(len(poses)))
+
+            # Phase 1: High-confidence IoU bipartite matching
+            iou_candidates = []
+            for e_idx, box in enumerate(entity_boxes):
+                for p_idx, p in enumerate(poses):
+                    iou = compute_2d_iou(box, p.bounding_box)
+                    if iou > 0.15:
+                        iou_candidates.append((iou, e_idx, p_idx))
+
+            iou_candidates.sort(key=lambda x: x[0], reverse=True)
+            for iou, e_idx, p_idx in iou_candidates:
+                if matched[e_idx] is None and p_idx in unassigned_pose_indices:
+                    matched[e_idx] = poses[p_idx]
+                    unassigned_pose_indices.remove(p_idx)
+
+            # Phase 2: Proximity matching by normalized center Euclidean distance
+            for e_idx, box in enumerate(entity_boxes):
+                if matched[e_idx] is None:
+                    bcx = (box.x_min + box.x_max) / 2.0
+                    bcy = (box.y_min + box.y_max) / 2.0
+
+                    best_p_idx = -1
+                    best_dist = float("inf")
+                    pool = unassigned_pose_indices if unassigned_pose_indices else range(len(poses))
+                    for p_idx in pool:
+                        p = poses[p_idx]
+                        pcx = (p.bounding_box.x_min + p.bounding_box.x_max) / 2.0
+                        pcy = (p.bounding_box.y_min + p.bounding_box.y_max) / 2.0
+                        dist = (bcx - pcx) ** 2 + (bcy - pcy) ** 2
+                        if dist < best_dist:
+                            best_dist = dist
+                            best_p_idx = p_idx
+
+                    if best_p_idx >= 0:
+                        matched[e_idx] = poses[best_p_idx]
+                        if best_p_idx in unassigned_pose_indices:
+                            unassigned_pose_indices.remove(best_p_idx)
+
+            return [m if m is not None else poses[0] for m in matched]
 
         return poses
 

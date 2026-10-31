@@ -83,12 +83,16 @@ MODEL_CATALOG: Dict[str, Dict[str, Any]] = {
     "hmr2": {
         "dir_name": "hmr2",
         "filename": "hmr2/epoch=35-step=1000000.ckpt",
+        "config_filename": "hmr2/model_config.yaml",
         "category": "human_reconstruction",
         "description": "4DHumans / HMR 2.0 (ViT Backbone + SMPL Transformer Regressor)",
-        "size_mb": 2100.0,
-        "license": "Code: MIT; SMPL: CC-BY-NC 4.0 (Non-Commercial Research)",
+        "hf_repo_id": "camenduru/4D-Humans",
+        "hf_ckpt_filename": "HMR2/logs/train/multiruns/hmr2/0/checkpoints/epoch=35-step=1000000.ckpt",
+        "hf_cfg_filename": "HMR2/logs/train/multiruns/hmr2/0/model_config.yaml",
+        "size_mb": 2584.0,
+        "license": "Code: MIT; Checkpoint & SMPL: CC-BY-NC 4.0 (Non-Commercial Research)",
         "task": "human-mesh-recovery",
-        "download_info": "Download hmr2a.ckpt or epoch=35-step=1000000.ckpt from 4DHumans release into data/models/hmr2/",
+        "download_info": "Pretrained 4DHumans HMR 2.0 ViT checkpoint hosted on Hugging Face (camenduru/4D-Humans)",
     },
 }
 
@@ -174,6 +178,27 @@ class ModelManager:
 
             logger.info(f"SPIN model and SMPL assets saved to {target_dir}")
             return dest_ckpt
+
+        if model_key == "hmr2":
+            from huggingface_hub import hf_hub_download
+            import shutil
+            target_dir = self.models_dir / meta["dir_name"]
+            target_dir.mkdir(parents=True, exist_ok=True)
+            logger.info(f"Downloading HMR 2.0 assets from {meta['hf_repo_id']} to {target_dir}...")
+
+            # 1. Download model_config.yaml
+            dest_cfg = self.models_dir / meta["config_filename"]
+            if not dest_cfg.exists():
+                p_cfg = hf_hub_download(repo_id=meta["hf_repo_id"], filename=meta["hf_cfg_filename"])
+                shutil.copyfile(p_cfg, dest_cfg)
+
+            # 2. Download epoch checkpoint
+            if not dest_path.exists() or dest_path.stat().st_size < 1000000:
+                p_ckpt = hf_hub_download(repo_id=meta["hf_repo_id"], filename=meta["hf_ckpt_filename"])
+                shutil.copyfile(p_ckpt, dest_path)
+
+            logger.info(f"HMR 2.0 checkpoint and config saved to {dest_path}")
+            return dest_path
 
         if "hf_model_id" in meta:
             hf_id = meta["hf_model_id"]
