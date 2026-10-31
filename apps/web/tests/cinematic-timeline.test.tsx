@@ -1,12 +1,13 @@
 import React from "react";
 import { render, screen, fireEvent, act } from "@testing-library/react";
 import { describe, it, expect, beforeEach, vi } from "vitest";
+import { TopBar } from "../components/layout/TopBar";
 import { ReconstructionTimeline } from "../components/timeline/ReconstructionTimeline";
 import { useCinematicStore, CINEMATIC_STAGES } from "../stores/cinematic-store";
 import { useSceneStore } from "../stores/scene-store";
 import { Scene } from "@photo-to-3d/scene-schema";
 
-describe("Cinematic Reconstruction Timeline Experience", () => {
+describe("Cinematic Reconstruction Animation Redesign", () => {
   const mockScene: Scene = {
     id: "scene-cinematic-001",
     schemaVersion: "1.0.0",
@@ -39,6 +40,23 @@ describe("Cinematic Reconstruction Timeline Experience", () => {
         visibility: true,
         reconstructionStatus: "ready",
         boundingBox: { xMin: 0.1, yMin: 0.2, xMax: 0.4, yMax: 0.8 },
+        reconstruction: {
+          status: "ready",
+          meshUrl: "/api/v1/assets/person-001/mesh.glb",
+        },
+      },
+      {
+        id: "person-002",
+        entityType: "person",
+        sourceImageId: "photo-001",
+        name: "Person 2",
+        visibility: true,
+        reconstructionStatus: "ready",
+        boundingBox: { xMin: 0.5, yMin: 0.2, xMax: 0.8, yMax: 0.8 },
+        reconstruction: {
+          status: "ready",
+          meshUrl: "/api/v1/assets/person-002/mesh.glb",
+        },
       },
     ],
     representations: {
@@ -52,95 +70,71 @@ describe("Cinematic Reconstruction Timeline Experience", () => {
     useCinematicStore.getState().resetCinematic();
   });
 
-  it("renders all 9 canonical cinematic reconstruction stages", () => {
+  it("ensures the bottom timeline is completely absent and renders nothing in the viewport", () => {
     act(() => {
       useSceneStore.getState().setScene(mockScene);
       useCinematicStore.getState().startCinematic();
     });
 
-    render(<ReconstructionTimeline />);
+    const { container } = render(<ReconstructionTimeline />);
 
-    expect(screen.getByTestId("reconstruction-timeline")).toBeInTheDocument();
-
-    // Verify all 9 stages are represented in the timeline
-    expect(screen.getByTestId("timeline-stage-1")).toHaveTextContent("Original Photo");
-    expect(screen.getByTestId("timeline-stage-2")).toHaveTextContent("Person Detection");
-    expect(screen.getByTestId("timeline-stage-3")).toHaveTextContent("Segmentation");
-    expect(screen.getByTestId("timeline-stage-4")).toHaveTextContent("Depth Map");
-    expect(screen.getByTestId("timeline-stage-5")).toHaveTextContent("Spatial Photo");
-    expect(screen.getByTestId("timeline-stage-6")).toHaveTextContent("Wireframe Extraction");
-    expect(screen.getByTestId("timeline-stage-7")).toHaveTextContent("3D Solid Mesh");
-    expect(screen.getByTestId("timeline-stage-8")).toHaveTextContent("Articulation & Rigging");
-    expect(screen.getByTestId("timeline-stage-9")).toHaveTextContent("Combined Scene");
-
-    // Stage 1 initial active pill
-    expect(screen.getByText("Stage 1 / 9")).toBeInTheDocument();
-    expect(screen.getByText("Ingestion & Validation")).toBeInTheDocument();
+    // Bottom timeline must not render any DOM elements
+    expect(container.firstChild).toBeNull();
+    expect(screen.queryByTestId("reconstruction-timeline")).not.toBeInTheDocument();
   });
 
-  it("provides pause and resume controls for cinematic playback", () => {
+  it("does not start cinematic reconstruction automatically upon loading a scene or image", () => {
     act(() => {
       useSceneStore.getState().setScene(mockScene);
-      useCinematicStore.getState().startCinematic();
+      useSceneStore.getState().setLocalPhoto("blob:test", 1200, 800, "test.jpg");
     });
-
-    render(<ReconstructionTimeline />);
-
-    const pauseBtn = screen.getByTestId("timeline-pause-btn");
-    expect(pauseBtn).toHaveTextContent("❚❚ Pause");
-
-    // Pause
-    fireEvent.click(pauseBtn);
-    expect(useCinematicStore.getState().isPaused).toBe(true);
-    expect(screen.getByTestId("timeline-pause-btn")).toHaveTextContent("▶ Resume");
-
-    // Resume
-    fireEvent.click(screen.getByTestId("timeline-pause-btn"));
-    expect(useCinematicStore.getState().isPaused).toBe(false);
-  });
-
-  it("allows skipping to final combined 3D scene directly", () => {
-    act(() => {
-      useSceneStore.getState().setScene(mockScene);
-      useCinematicStore.getState().startCinematic();
-    });
-
-    render(<ReconstructionTimeline />);
-
-    const skipBtn = screen.getByTestId("timeline-skip-btn");
-    fireEvent.click(skipBtn);
 
     expect(useCinematicStore.getState().isCinematicActive).toBe(false);
-    expect(useCinematicStore.getState().currentStageId).toBe("stage_combined");
-    expect(useSceneStore.getState().visualizationMode).toBe("combined");
+    expect(useCinematicStore.getState().currentStageId).toBe("stage_photo");
   });
 
-  it("allows clicking completed stages to inspect intermediate results without re-running pipeline", () => {
+  it("provides an elegant 'Reconstruct Scene' button in TopBar that starts the cinematic experience", () => {
+    act(() => {
+      useSceneStore.getState().setScene(mockScene);
+      useSceneStore.getState().setLocalPhoto("blob:test", 1200, 800, "test.jpg");
+    });
+
+    render(<TopBar />);
+
+    const reconstructBtn = screen.getByTestId("reconstruct-scene-btn");
+    expect(reconstructBtn).toBeInTheDocument();
+    expect(reconstructBtn).not.toBeDisabled();
+
+    // User explicitly initiates the reconstruction presentation
+    fireEvent.click(reconstructBtn);
+
+    expect(useCinematicStore.getState().isCinematicActive).toBe(true);
+    expect(useCinematicStore.getState().currentStageId).toBe("stage_photo");
+  });
+
+  it("supports individual person extraction and topology reveal in cinematic store", () => {
     act(() => {
       useSceneStore.getState().setScene(mockScene);
       useCinematicStore.getState().startCinematic();
-      // Mark stages 1, 2, 3 as completed
-      useCinematicStore.getState().updateStageStatus("stage_photo", "completed");
-      useCinematicStore.getState().updateStageStatus("stage_detection", "completed");
-      useCinematicStore.getState().updateStageStatus("stage_segmentation", "completed");
-      useCinematicStore.getState().setCurrentStage("stage_depth");
+      useCinematicStore.getState().setCurrentStage("stage_wireframe");
+      useCinematicStore.getState().setActivePersonIndex(0, 2);
+      useCinematicStore.getState().setPersonExtractionProgress(0.5);
     });
 
-    render(<ReconstructionTimeline />);
+    const state = useCinematicStore.getState();
+    expect(state.currentStageId).toBe("stage_wireframe");
+    expect(state.activePersonIndex).toBe(0);
+    expect(state.personExtractionProgress).toBe(0.5);
+    expect(state.totalPersons).toBe(2);
 
-    // Click on Stage 2 (Person Detection)
-    const stage2Btn = screen.getByTestId("timeline-stage-2");
-    fireEvent.click(stage2Btn);
+    // Transition to person 1
+    act(() => {
+      useCinematicStore.getState().setActivePersonIndex(1, 2);
+      useCinematicStore.getState().setPersonExtractionProgress(0.8);
+    });
 
-    expect(useSceneStore.getState().visualizationMode).toBe("detection");
-    expect(useCinematicStore.getState().currentStageId).toBe("stage_detection");
-
-    // Click on Stage 3 (Segmentation)
-    const stage3Btn = screen.getByTestId("timeline-stage-3");
-    fireEvent.click(stage3Btn);
-
-    expect(useSceneStore.getState().visualizationMode).toBe("segmentation");
-    expect(useCinematicStore.getState().currentStageId).toBe("stage_segmentation");
+    const nextState = useCinematicStore.getState();
+    expect(nextState.activePersonIndex).toBe(1);
+    expect(nextState.personExtractionProgress).toBe(0.8);
   });
 });
-

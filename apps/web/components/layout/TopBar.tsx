@@ -4,6 +4,7 @@ import React, { useState, useEffect, useRef } from "react";
 import { RepresentationSelector } from "@/components/controls/RepresentationSelector";
 import { UploadButton } from "@/components/controls/UploadButton";
 import { useSceneStore } from "@/stores/scene-store";
+import { useCinematicStore } from "@/stores/cinematic-store";
 import { useProjectStore } from "@/stores/project-store";
 import { useUIStore } from "@/stores/ui-store";
 import { apiClient } from "@/lib/api-client";
@@ -17,9 +18,21 @@ export const TopBar: React.FC = () => {
   const resetCamera = useUIStore((state) => state.resetCamera);
   const fitScene = useUIStore((state) => state.fitScene);
   const apiConnected = useUIStore((state) => state.apiConnected);
+  const setError = useUIStore((state) => state.setError);
   const setStatusNotice = useUIStore((state) => state.setStatusNotice);
 
   const currentScene = useSceneStore((state) => state.currentScene);
+  const localPhotoUrl = useSceneStore((state) => state.localPhotoUrl);
+  const isAnalyzing = useSceneStore((state) => state.isAnalyzing);
+  const qualityPreset = useSceneStore((state) => state.qualityPreset);
+  const setAnalysisState = useSceneStore((state) => state.setAnalysisState);
+  const applyEvent = useSceneStore((state) => state.applyEvent);
+  const reconcileAuthoritativeScene = useSceneStore(
+    (state) => state.reconcileAuthoritativeScene
+  );
+
+  const isCinematicActive = useCinematicStore((state) => state.isCinematicActive);
+
   const currentProject = useProjectStore((state) => state.currentProject);
   const isDirty = useProjectStore((state) => state.isDirty);
   const isSaving = useProjectStore((state) => state.isSaving);
@@ -34,6 +47,75 @@ export const TopBar: React.FC = () => {
   const [isProjectsMenuOpen, setProjectsMenuOpen] = useState(false);
   const [isExportMenuOpen, setExportMenuOpen] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const hasReconstructedMeshes = Boolean(
+    currentScene?.entities?.some(
+      (e) =>
+        e.reconstruction?.status === "ready" &&
+        Boolean(e.reconstruction?.meshUrl || e.reconstruction?.meshAssetId)
+    )
+  );
+
+  const handleReconstructScene = async () => {
+    if (!currentScene && !localPhotoUrl) {
+      setError("Please upload a photograph first.");
+      return;
+    }
+
+    // Replay presentation if already reconstructed and not analyzing
+    if (hasReconstructedMeshes && !isAnalyzing) {
+      useCinematicStore.getState().startCinematic();
+      return;
+    }
+
+    if (currentScene && !currentScene.id.startsWith("local-")) {
+      try {
+        useCinematicStore.getState().startCinematic();
+        setAnalysisState(true, "Initializing neural reconstruction pipeline...", 0.05);
+        setError(null);
+        setStatusNotice("Reconstructing scene (Detection, Segmentation, Depth, HMR 2.0)...");
+
+        const job = await apiClient.triggerAnalysis(currentScene.id, 0.35, false, true, qualityPreset);
+        setAnalysisState(true, "Job accepted by engine", 0.08, job.job_id);
+
+        apiClient.subscribeToJobEvents(
+          job.job_id,
+          0,
+          (ev) => {
+            applyEvent(ev);
+            if (ev.message) {
+              setStatusNotice(ev.message);
+            }
+          },
+          async () => {
+            try {
+              const refreshed = await apiClient.getScene(currentScene.id);
+              reconcileAuthoritativeScene(refreshed);
+              useCinematicStore.getState().updateStageStatus("stage_combined", "completed", { progress: 1.0 });
+              setStatusNotice(
+                refreshed.entities.length > 0
+                  ? `Reconstruction complete: ${refreshed.entities.length} people identified & reconstructed.`
+                  : "Reconstruction complete: No people detected."
+              );
+            } catch {
+              // Ignore refresh error
+            }
+          },
+          (err) => {
+            console.warn("Event stream error:", err);
+          }
+        );
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : "Reconstruction failed";
+        setError(msg);
+        setAnalysisState(false, null, 0);
+        useCinematicStore.getState().skipCinematic();
+      }
+    } else {
+      // Local preview or mock mode
+      useCinematicStore.getState().startCinematic();
+    }
+  };
 
   // Initialize project if scene loads and no project active
   useEffect(() => {
@@ -310,6 +392,33 @@ export const TopBar: React.FC = () => {
           data-testid="toggle-inspector-btn"
         >
           Inspector
+        </button>
+
+        {/* Primary Reconstruct Scene Button */}
+        <button
+          type="button"
+          className={`${styles.reconstructBtn} ${isAnalyzing || isCinematicActive ? styles.running : ""}`}
+          onClick={handleReconstructScene}
+          disabled={!currentScene && !localPhotoUrl}
+          title={
+            !currentScene && !localPhotoUrl
+              ? "Upload a photograph first"
+              : isAnalyzing || isCinematicActive
+              ? "Reconstruction in progress"
+              : hasReconstructedMeshes
+              ? "Replay 3D reconstruction presentation"
+              : "Reconstruct 3D scene from photograph"
+          }
+          data-testid="reconstruct-scene-btn"
+        >
+          {(isAnalyzing || isCinematicActive) && <span className={styles.pulsingDot} />}
+          <span>
+            {isAnalyzing || isCinematicActive
+              ? "Reconstructing..."
+              : hasReconstructedMeshes
+              ? "Replay Reconstruction"
+              : "Reconstruct Scene"}
+          </span>
         </button>
 
         <UploadButton label="Upload Photo" />

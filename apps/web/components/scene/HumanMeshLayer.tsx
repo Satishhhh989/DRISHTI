@@ -13,6 +13,7 @@ export type Unified3DMode = "wireframe" | "solid3d" | "articulated" | "combined"
 
 interface HumanMeshProps {
   entity: SceneEntity;
+  entityIndex?: number;
   mode: Unified3DMode;
   isSelected: boolean;
   onSelect: () => void;
@@ -261,6 +262,7 @@ export const SkeletonOverlay: React.FC<SkeletonOverlayProps> = ({
 
 const SingleHumanMesh: React.FC<HumanMeshProps> = ({
   entity,
+  entityIndex,
   mode,
   isSelected,
   onSelect,
@@ -277,6 +279,8 @@ const SingleHumanMesh: React.FC<HumanMeshProps> = ({
   const photoDimensions = useSceneStore((state) => state.photoDimensions);
   const isCinematicActive = useCinematicStore((state) => state.isCinematicActive);
   const currentStageId = useCinematicStore((state) => state.currentStageId);
+  const activePersonIndex = useCinematicStore((state) => state.activePersonIndex);
+  const personExtractionProgress = useCinematicStore((state) => state.personExtractionProgress);
   const wireframeLiftProgress = useCinematicStore((state) => state.wireframeLiftProgress);
   const surfaceDissolveProgress = useCinematicStore((state) => state.surfaceDissolveProgress);
 
@@ -350,12 +354,15 @@ const SingleHumanMesh: React.FC<HumanMeshProps> = ({
           roughness: 0.65,
           metalness: 0.05,
           side: THREE.DoubleSide,
+          transparent: isArticulated,
+          opacity: isArticulated ? 0.72 : 1.0,
+          depthWrite: !isArticulated,
           emissive: isSelected ? new THREE.Color("#2563eb") : new THREE.Color(0x000000),
           emissiveIntensity: isSelected ? 0.35 : 0.0,
         });
       }
     });
-  }, [modelGroup, isWireframe, isSelected]);
+  }, [modelGroup, isWireframe, isSelected, isArticulated]);
 
   const rawPos = entity.transform?.position || entity.reconstruction?.transform?.position;
   const basePosition: [number, number, number] = useMemo(() => {
@@ -375,7 +382,7 @@ const SingleHumanMesh: React.FC<HumanMeshProps> = ({
       : [1, 1, 1];
   }, [rawScale]);
 
-  // Visual presentation position: handles Stage 6 (Wireframe Lift) and Stage 9 (Assembly Step-Forward)
+  // Visual presentation position: handles Stage 6 (Individual Wireframe Lift) and Stage 9 (Assembly Step-Forward)
   const visualPosition: [number, number, number] = useMemo(() => {
     const box = entity.boundingBox || entity.detection?.boundingBox;
     const planeH = 2.0;
@@ -383,10 +390,21 @@ const SingleHumanMesh: React.FC<HumanMeshProps> = ({
     const photoX = box ? ((box.xMin + box.xMax) / 2 - 0.5) * planeW : basePosition[0];
     const photoY = box ? planeH / 2 + (0.5 - (box.yMin + box.yMax) / 2) * planeH : basePosition[1];
 
-    // Stage 6: Wireframe Extraction (Smoothly lifts away from photograph)
+    // Stage 6: Wireframe Extraction (Individual person lift away from photograph)
     if (isCinematicActive && currentStageId === "stage_wireframe") {
-      const liftZ = THREE.MathUtils.smoothstep(wireframeLiftProgress, 0.0, 1.0) * 0.65;
-      return [photoX, photoY, liftZ];
+      let lift = 1.0;
+      if (entityIndex !== undefined && activePersonIndex >= 0) {
+        if (entityIndex > activePersonIndex) {
+          lift = 0.0;
+        } else if (entityIndex === activePersonIndex) {
+          lift = THREE.MathUtils.smoothstep(personExtractionProgress, 0.0, 1.0);
+        } else {
+          lift = 1.0;
+        }
+      } else {
+        lift = THREE.MathUtils.smoothstep(wireframeLiftProgress, 0.0, 1.0);
+      }
+      return [photoX, photoY, lift * 0.65];
     }
 
     // Stage 7: 3D Solid Mesh (Hovering in front of photo during progressive surface shading)
@@ -421,8 +439,18 @@ const SingleHumanMesh: React.FC<HumanMeshProps> = ({
     photoDimensions,
     isCinematicActive,
     currentStageId,
+    entityIndex,
+    activePersonIndex,
+    personExtractionProgress,
     wireframeLiftProgress,
   ]);
+
+  const isVisibleInStage6 =
+    !isCinematicActive ||
+    currentStageId !== "stage_wireframe" ||
+    entityIndex === undefined ||
+    activePersonIndex < 0 ||
+    entityIndex <= activePersonIndex;
 
   // Procedural articulation & skeletal deformation loop
   useFrame((_, delta) => {
@@ -574,6 +602,7 @@ const SingleHumanMesh: React.FC<HumanMeshProps> = ({
   return (
     <group
       ref={groupRef}
+      visible={isVisibleInStage6}
       position={visualPosition}
       scale={baseScale}
       onClick={(e: { stopPropagation: () => void }) => {
@@ -683,10 +712,11 @@ export const HumanMeshLayer: React.FC<{
       <directionalLight position={[0, -4, 2]} intensity={0.3} />
 
       {/* Reconstructed Volumetric 3D Meshes */}
-      {reconstructedEntities.map((entity) => (
+      {reconstructedEntities.map((entity, idx) => (
         <SingleHumanMesh
           key={entity.id}
           entity={entity}
+          entityIndex={idx}
           mode={mode}
           isSelected={selectedEntityId === entity.id}
           onSelect={() => selectEntity(entity.id)}

@@ -134,7 +134,8 @@ interface CinematicState {
   // Real-time animation drivers
   cameraTarget: CameraTarget | null;
   depthWipeProgress: number; // 0.0 to 1.0 for Stage 4 depth reveal sweep
-  wireframeLiftProgress: number; // 0.0 to 1.0 for Stage 6 person lift away from plane
+  wireframeLiftProgress: number; // 0.0 to 1.0 for Stage 6 overall
+  personExtractionProgress: number; // 0.0 to 1.0 for individual person extraction
   surfaceDissolveProgress: number; // 0.0 to 1.0 for Stage 7 wireframe-to-solid dissolve
   assemblyProgress: number; // 0.0 to 1.0 for Stage 9 step-forward
 
@@ -154,6 +155,7 @@ interface CinematicState {
   setCameraTarget: (target: CameraTarget | null) => void;
   setDepthWipeProgress: (progress: number) => void;
   setWireframeLiftProgress: (progress: number) => void;
+  setPersonExtractionProgress: (progress: number) => void;
   setSurfaceDissolveProgress: (progress: number) => void;
   setAssemblyProgress: (progress: number) => void;
 }
@@ -182,6 +184,7 @@ export const useCinematicStore = create<CinematicState>((set, get) => ({
   cameraTarget: null,
   depthWipeProgress: 0.0,
   wireframeLiftProgress: 0.0,
+  personExtractionProgress: 0.0,
   surfaceDissolveProgress: 0.0,
   assemblyProgress: 0.0,
 
@@ -197,6 +200,7 @@ export const useCinematicStore = create<CinematicState>((set, get) => ({
       activePersonIndex: -1,
       depthWipeProgress: 0.0,
       wireframeLiftProgress: 0.0,
+      personExtractionProgress: 0.0,
       surfaceDissolveProgress: 0.0,
       assemblyProgress: 0.0,
     });
@@ -225,6 +229,7 @@ export const useCinematicStore = create<CinematicState>((set, get) => ({
       cameraTarget: null,
       assemblyProgress: 1.0,
       wireframeLiftProgress: 1.0,
+      personExtractionProgress: 1.0,
       surfaceDissolveProgress: 1.0,
       depthWipeProgress: 1.0,
       activePersonIndex: -1,
@@ -241,6 +246,7 @@ export const useCinematicStore = create<CinematicState>((set, get) => ({
       activePersonIndex: -1,
       depthWipeProgress: 0.0,
       wireframeLiftProgress: 0.0,
+      personExtractionProgress: 0.0,
       surfaceDissolveProgress: 0.0,
       assemblyProgress: 0.0,
     });
@@ -289,6 +295,7 @@ export const useCinematicStore = create<CinematicState>((set, get) => ({
   setCameraTarget: (target) => set({ cameraTarget: target }),
   setDepthWipeProgress: (progress) => set({ depthWipeProgress: Math.max(0, Math.min(1, progress)) }),
   setWireframeLiftProgress: (progress) => set({ wireframeLiftProgress: Math.max(0, Math.min(1, progress)) }),
+  setPersonExtractionProgress: (progress) => set({ personExtractionProgress: Math.max(0, Math.min(1, progress)) }),
   setSurfaceDissolveProgress: (progress) => set({ surfaceDissolveProgress: Math.max(0, Math.min(1, progress)) }),
   setAssemblyProgress: (progress) => set({ assemblyProgress: Math.max(0, Math.min(1, progress)) }),
 }));

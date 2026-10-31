@@ -3,6 +3,7 @@
 import React, { useRef, useEffect, useMemo } from "react";
 import * as THREE from "three";
 import { useFrame, useThree } from "@react-three/fiber";
+import { Html } from "@react-three/drei";
 import {
   CinematicStageId,
   CINEMATIC_STAGES,
@@ -41,6 +42,7 @@ export const CinematicSceneDirector: React.FC = () => {
   const setActivePersonIndex = useCinematicStore((state) => state.setActivePersonIndex);
   const setDepthWipeProgress = useCinematicStore((state) => state.setDepthWipeProgress);
   const setWireframeLiftProgress = useCinematicStore((state) => state.setWireframeLiftProgress);
+  const setPersonExtractionProgress = useCinematicStore((state) => state.setPersonExtractionProgress);
   const setSurfaceDissolveProgress = useCinematicStore((state) => state.setSurfaceDissolveProgress);
   const setAssemblyProgress = useCinematicStore((state) => state.setAssemblyProgress);
   const skipCinematic = useCinematicStore((state) => state.skipCinematic);
@@ -66,6 +68,12 @@ export const CinematicSceneDirector: React.FC = () => {
 
   const entities = currentScene?.entities || [];
   const totalEntities = entities.length;
+
+  // Reset stage timers whenever active stage transitions
+  useEffect(() => {
+    stageTimerRef.current = 0;
+    personTimerRef.current = 0;
+  }, [currentStageId]);
 
   // Detect user preference for reduced motion
   const prefersReducedMotion = useMemo(() => {
@@ -271,12 +279,12 @@ export const CinematicSceneDirector: React.FC = () => {
     // -------------------------------------------------------------
     else if (currentStageId === "stage_spatial_photo") {
       if (prefersReducedMotion) {
-        cameraTargetRef.current.pos.set(0.4, 1.05, 3.1);
+        cameraTargetRef.current.pos.set(0.35, 1.05, 3.1);
         cameraTargetRef.current.look.set(0, 1.0, 0);
       } else {
-        // Orbit to 25-degree perspective to reveal real depth displacement
+        // Orbit to 18-degree perspective to reveal real depth displacement
         const t = Math.min(1.0, stageTime / 2.0);
-        const angle = 0.45 * Math.sin(t * Math.PI * 0.5);
+        const angle = 0.32 * Math.sin(t * Math.PI * 0.5);
         cameraTargetRef.current.pos.set(Math.sin(angle) * 3.2, 1.05, Math.cos(angle) * 3.2);
         cameraTargetRef.current.look.set(0, 1.0, 0);
       }
@@ -285,31 +293,64 @@ export const CinematicSceneDirector: React.FC = () => {
         updateStageStatus("stage_spatial_photo", "completed", { progress: 1.0 });
         setCurrentStage("stage_wireframe");
         setVisualizationMode("wireframe");
-        stageTimerRef.current = 0;
       }
     }
 
     // -------------------------------------------------------------
-    // STAGE 6: Wireframe Extraction (Per-person lift & topology)
+    // STAGE 6: Individual Wireframe Extraction (Per-person lift & topology)
     // -------------------------------------------------------------
     else if (currentStageId === "stage_wireframe") {
-      const lift = Math.min(1.0, stageTime / 2.2);
-      setWireframeLiftProgress(lift);
-      if (prefersReducedMotion) {
-        cameraTargetRef.current.pos.set(0, 1.15, 3.4);
-        cameraTargetRef.current.look.set(0, 1.0, 0);
-      } else {
-        // Gentle orbit framing the lifting wireframes
-        const angle = 0.25 * Math.sin(stageTime * 0.8);
-        cameraTargetRef.current.pos.set(Math.sin(angle) * 3.4, 1.15, Math.cos(angle) * 3.4);
-        cameraTargetRef.current.look.set(0, 1.0, 0);
-      }
+      const personDuration = 1.8;
+      const totalExtractionTime = Math.max(2.0, totalEntities * personDuration);
 
-      if (!isAnalyzing && stageTime > 3.0) {
+      if (totalEntities > 0) {
+        const curIdx = Math.min(totalEntities - 1, Math.floor(stageTime / personDuration));
+        const personTime = stageTime - curIdx * personDuration;
+        const pProgress = Math.min(1.0, personTime / (personDuration * 0.7));
+
+        setPersonExtractionProgress(pProgress);
+
+        if (curIdx !== activePersonIndex && stageTime <= totalExtractionTime) {
+          setActivePersonIndex(curIdx, totalEntities);
+        }
+
+        const entity = entities[curIdx];
+        const box = entity?.boundingBox || entity?.detection?.boundingBox;
+
+        if (box && curIdx < totalEntities && stageTime <= totalExtractionTime && !prefersReducedMotion) {
+          const boxCenterX = ((box.xMin + box.xMax) / 2 - 0.5) * width;
+          const boxCenterY = centerY + (0.5 - (box.yMin + box.yMax) / 2) * height;
+
+          // Camera frames the extracting person and moves slightly to showcase 3D depth and volume
+          const angle = 0.12 * Math.sin(pProgress * Math.PI);
+          cameraTargetRef.current.pos.set(
+            boxCenterX * 0.35 + Math.sin(angle) * 0.8,
+            boxCenterY * 0.35 + 0.55,
+            2.3 + Math.cos(angle) * 0.3
+          );
+          cameraTargetRef.current.look.set(boxCenterX * 0.3, boxCenterY * 0.3 + 0.5, 0.2);
+        }
+
+        // Once all people have been extracted, pull back and frame all extracted wireframes
+        if (stageTime > totalExtractionTime) {
+          setActivePersonIndex(totalEntities); // Indicates all persons extracted
+          setPersonExtractionProgress(1.0);
+          setWireframeLiftProgress(1.0);
+
+          cameraTargetRef.current.pos.set(0, 1.15, 3.4);
+          cameraTargetRef.current.look.set(0, 1.0, 0);
+
+          if (!isAnalyzing && stageTime > totalExtractionTime + 1.2) {
+            updateStageStatus("stage_wireframe", "completed", { progress: 1.0 });
+            setCurrentStage("stage_solid3d");
+            setVisualizationMode("solid3d");
+            setActivePersonIndex(-1);
+          }
+        }
+      } else if (!isAnalyzing && stageTime > 2.5) {
         updateStageStatus("stage_wireframe", "completed", { progress: 1.0 });
         setCurrentStage("stage_solid3d");
         setVisualizationMode("solid3d");
-        stageTimerRef.current = 0;
       }
     }
 
@@ -397,20 +438,65 @@ export const CinematicSceneDirector: React.FC = () => {
           const boxCenterY = centerY + (0.5 - (box.yMin + box.yMax) / 2) * height;
 
           const isActive = activePersonIndex === idx || activePersonIndex === -1;
+          const isFocused = activePersonIndex === idx;
           const color = PALETTE[idx % PALETTE.length];
+          const confidencePct = entity.detection
+            ? Math.round(entity.detection.confidence * 100)
+            : entity.confidence?.detectionConfidence
+            ? Math.round(entity.confidence.detectionConfidence * 100)
+            : null;
 
           return (
             <group key={`cinematic-det-${entity.id}`} position={[boxCenterX, boxCenterY, 0.018]}>
               <lineSegments>
                 <edgesGeometry args={[new THREE.PlaneGeometry(boxWidth, boxHeight)]} />
                 <lineBasicMaterial
-                  color={isActive ? "#ffffff" : color.hex}
+                  color={isFocused ? "#ffffff" : color.hex}
                   transparent
-                  opacity={isActive ? 0.95 : 0.3}
-                  linewidth={isActive ? 2 : 1}
+                  opacity={isFocused ? 0.95 : isActive ? 0.5 : 0.2}
+                  linewidth={isFocused ? 2 : 1}
                   depthTest={false}
                 />
               </lineSegments>
+
+              {/* Temporary identification label for focused person */}
+              {currentStageId === "stage_detection" && isFocused && (
+                <Html
+                  position={[-boxWidth / 2, boxHeight / 2, 0]}
+                  style={{
+                    transform: "translate(0, -100%)",
+                    pointerEvents: "none",
+                    whiteSpace: "nowrap",
+                    userSelect: "none",
+                  }}
+                >
+                  <div
+                    style={{
+                      display: "inline-flex",
+                      alignItems: "center",
+                      gap: "6px",
+                      backgroundColor: "rgba(15, 15, 18, 0.92)",
+                      color: "#ffffff",
+                      border: "1px solid #38bdf8",
+                      borderRadius: "3px",
+                      padding: "2px 6px",
+                      fontSize: "10px",
+                      fontWeight: 600,
+                      letterSpacing: "0.04em",
+                      boxShadow: "0 2px 8px rgba(0,0,0,0.5)",
+                    }}
+                  >
+                    <span style={{ color: "#38bdf8" }}>
+                      PERSON {String(idx + 1).padStart(2, "0")}
+                    </span>
+                    {confidencePct && (
+                      <span style={{ color: "#94a3b8", fontSize: "9px" }}>
+                        {confidencePct}%
+                      </span>
+                    )}
+                  </div>
+                </Html>
+              )}
             </group>
           );
         })}

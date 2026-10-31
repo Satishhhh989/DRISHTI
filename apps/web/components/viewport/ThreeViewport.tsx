@@ -9,7 +9,6 @@ import { PhotoPlane } from "@/components/scene/PhotoPlane";
 import { HumanMeshLayer, Unified3DMode } from "@/components/scene/HumanMeshLayer";
 import { LiveReconstructionController } from "@/components/scene/LiveReconstructionController";
 import { CinematicSceneDirector } from "@/components/scene/CinematicSceneDirector";
-import { ReconstructionTimeline } from "@/components/timeline/ReconstructionTimeline";
 import { UploadButton } from "@/components/controls/UploadButton";
 import { useSceneStore } from "@/stores/scene-store";
 import { useCinematicStore } from "@/stores/cinematic-store";
@@ -69,16 +68,15 @@ export const ThreeViewport: React.FC = () => {
         const dims = await getImageDimensions(file);
         const url = URL.createObjectURL(file);
         setLocalPhoto(url, dims.width, dims.height, file.name);
-        useCinematicStore.getState().startCinematic();
 
         try {
           const res = await apiClient.uploadPhoto(file);
           if (res.scene) {
             setScene(res.scene);
           }
-          setStatusNotice("Photograph loaded into 3D scene.");
+          setStatusNotice("Photograph loaded. Click 'Reconstruct Scene' to begin 3D reconstruction.");
         } catch {
-          setStatusNotice("Operating in local offline mode.");
+          setStatusNotice("Photograph preview ready (local mode). Click 'Reconstruct Scene' to begin.");
         }
       } catch (err: unknown) {
         const msg = err instanceof Error ? err.message : "Failed to load dropped image";
@@ -233,9 +231,6 @@ export const ThreeViewport: React.FC = () => {
               {/* Camera navigation */}
               <CameraController />
             </Canvas>
-
-            {/* Cinematic Reconstruction Sequence Timeline */}
-            <ReconstructionTimeline />
           </div>
         </ViewportErrorBoundary>
       )}
