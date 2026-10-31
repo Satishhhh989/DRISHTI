@@ -26,6 +26,7 @@ bash scripts/test_backend.sh
 
 echo ""
 echo ">>> [5/5] Testing Browser E2E Suite (Playwright)..."
+pnpm --filter @photo-to-3d/web build
 pnpm test:e2e
 
 echo ""

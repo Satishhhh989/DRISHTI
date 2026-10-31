@@ -128,3 +128,27 @@ def test_reset_entity_transform(test_scene):
     assert round(e0["transform"]["position"]["x"], 1) == -0.4
     assert e0["transform"]["position"]["y"] == 0.0
     assert e0["transform"]["scale"]["x"] == 1.0
+
+
+def test_delete_scene_entity(test_scene):
+    res = client.delete(f"/api/v1/scenes/{test_scene.id}/entities/person-1")
+    assert res.status_code == 200
+    data = res.json()
+    assert len(data["entities"]) == 1
+    assert data["entities"][0]["id"] == "person-0"
+
+    # Deleting non-existent returns 404
+    res_404 = client.delete(f"/api/v1/scenes/{test_scene.id}/entities/person-99")
+    assert res_404.status_code == 404
+
+
+def test_keep_only_scene_entities(test_scene):
+    res = client.post(
+        f"/api/v1/scenes/{test_scene.id}/entities/keep-only",
+        json={"keep_entity_ids": ["person-1"]},
+    )
+    assert res.status_code == 200
+    data = res.json()
+    assert len(data["entities"]) == 1
+    assert data["entities"][0]["id"] == "person-1"
+

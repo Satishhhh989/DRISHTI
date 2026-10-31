@@ -121,5 +121,85 @@ describe("Phase 04 Progressive Pipeline Inspector", () => {
     // Partial failure warning should be visible
     expect(screen.getByText(/Depth model weights unavailable/)).toBeInTheDocument();
   });
+
+  it("supports removing entities, isolating entities, and restoring excluded entities", async () => {
+    const scene: Scene = createInitialScene({
+      id: "scene-entity-removal-test",
+      name: "Removal Test Scene",
+      sourceImage: {
+        assetId: "photo-1",
+        filename: "group.jpg",
+        width: 1000,
+        height: 750,
+        aspectRatio: 1.333,
+        mimeType: "image/jpeg",
+        sizeBytes: 8000,
+        uploadedAt: new Date().toISOString(),
+      },
+    });
+
+    scene.entities.push(
+      {
+        id: "person-001",
+        entityType: "person",
+        sourceImageId: "photo-1",
+        name: "Person 1",
+        transform: { position: { x: 0, y: 0, z: 0 }, rotation: { x: 0, y: 0, z: 0 }, scale: { x: 1, y: 1, z: 1 } },
+        visibility: true,
+        animationState: { currentClip: null, isPlaying: false, playbackSpeed: 1, loop: true },
+        reconstructionStatus: "unstarted",
+      },
+      {
+        id: "object-bus-001",
+        entityType: "object",
+        objectClass: "bus",
+        sourceImageId: "photo-1",
+        name: "Bus 1",
+        transform: { position: { x: 1, y: 0, z: 0 }, rotation: { x: 0, y: 0, z: 0 }, scale: { x: 1, y: 1, z: 1 } },
+        visibility: true,
+        animationState: { currentClip: null, isPlaying: false, playbackSpeed: 1, loop: true },
+        reconstructionStatus: "unstarted",
+      }
+    );
+
+    await act(async () => {
+      useSceneStore.getState().setScene(scene);
+      render(<WorkspacePage />);
+    });
+
+    // Both entities are initially present
+    expect(screen.getByTestId("person-card-person-001")).toBeInTheDocument();
+    expect(screen.getByTestId("person-card-object-bus-001")).toBeInTheDocument();
+    expect(screen.getByTestId("keep-people-only-btn")).toBeInTheDocument();
+    expect(screen.getByTestId("keep-objects-only-btn")).toBeInTheDocument();
+
+    // Remove the bus
+    const removeBusBtn = screen.getByTestId("remove-entity-object-bus-001");
+    await act(async () => {
+      fireEvent.click(removeBusBtn);
+    });
+
+    // Bus should be removed from active entities and present in excluded entities
+    expect(screen.queryByTestId("person-card-object-bus-001")).not.toBeInTheDocument();
+    expect(screen.getByTestId("excluded-entities-box")).toBeInTheDocument();
+    expect(screen.getByTestId("restore-entity-object-bus-001")).toBeInTheDocument();
+
+    // Restore the bus
+    await act(async () => {
+      fireEvent.click(screen.getByTestId("restore-entity-object-bus-001"));
+    });
+
+    expect(screen.getByTestId("person-card-object-bus-001")).toBeInTheDocument();
+    expect(screen.queryByTestId("excluded-entities-box")).not.toBeInTheDocument();
+
+    // Filter people only
+    await act(async () => {
+      fireEvent.click(screen.getByTestId("keep-people-only-btn"));
+    });
+
+    expect(screen.getByTestId("person-card-person-001")).toBeInTheDocument();
+    expect(screen.queryByTestId("person-card-object-bus-001")).not.toBeInTheDocument();
+    expect(screen.getByTestId("excluded-entities-box")).toBeInTheDocument();
+  });
 });
 

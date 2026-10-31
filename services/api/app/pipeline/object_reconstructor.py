@@ -335,3 +335,4 @@ class Object3DReconstructor:
 
 # Global singleton instance
 object_reconstructor = Object3DReconstructor()
+

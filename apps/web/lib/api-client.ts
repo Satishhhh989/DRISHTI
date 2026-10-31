@@ -370,6 +370,32 @@ export class ApiClient {
     return normalizeScene(data);
   }
 
+  async deleteEntity(sceneId: string, entityId: string): Promise<Scene> {
+    const res = await fetch(`${this.base}/api/v1/scenes/${sceneId}/entities/${entityId}`, {
+      method: "DELETE",
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err?.error?.message || `Failed to delete entity (status ${res.status})`);
+    }
+    const data = await res.json();
+    return normalizeScene(data);
+  }
+
+  async keepOnlyEntities(sceneId: string, keepEntityIds: string[]): Promise<Scene> {
+    const res = await fetch(`${this.base}/api/v1/scenes/${sceneId}/entities/keep-only`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ keep_entity_ids: keepEntityIds }),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err?.error?.message || `Failed to filter entities (status ${res.status})`);
+    }
+    const data = await res.json();
+    return normalizeScene(data);
+  }
+
   getMeshExportUrl(sceneId: string, entityId: string, applyTransform: boolean = false): string {
     return `${this.base}/api/v1/export/mesh/${sceneId}/${entityId}?apply_transform=${applyTransform}`;
   }

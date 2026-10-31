@@ -29,6 +29,13 @@ export const ContextualPanel: React.FC = () => {
     (state) => state.reconcileAuthoritativeScene
   );
   const toggleEntityVisibility = useSceneStore((state) => state.toggleEntityVisibility);
+  const removeEntity = useSceneStore((state) => state.removeEntity);
+  const keepOnlyEntity = useSceneStore((state) => state.keepOnlyEntity);
+  const keepOnlyPeople = useSceneStore((state) => state.keepOnlyPeople);
+  const keepOnlyObjects = useSceneStore((state) => state.keepOnlyObjects);
+  const restoreEntity = useSceneStore((state) => state.restoreEntity);
+  const restoreAllEntities = useSceneStore((state) => state.restoreAllEntities);
+  const removedEntities = useSceneStore((state) => state.removedEntities || []);
   const updateEntityTransform = useSceneStore((state) => state.updateEntityTransform);
   const resetEntityTransform = useSceneStore((state) => state.resetEntityTransform);
   const setEntityAnimation = useSceneStore((state) => state.setEntityAnimation);
@@ -562,6 +569,47 @@ export const ContextualPanel: React.FC = () => {
           <span className={styles.propValue}>{entities.length}</span>
         </div>
 
+        {/* Quick Filter Controls: Filter People vs Objects */}
+        {entities.length > 0 && (
+          (() => {
+            const numPeople = entities.filter((e) => e.entityType === "person").length;
+            const numObjects = entities.filter((e) => e.entityType === "object").length;
+            if (numPeople > 0 && numObjects > 0) {
+              return (
+                <div style={{ display: "flex", gap: "6px", marginTop: "6px", marginBottom: "8px" }} data-testid="entity-quick-filters">
+                  <button
+                    type="button"
+                    className={styles.filterPill}
+                    style={{ flex: 1 }}
+                    onClick={() => {
+                      keepOnlyPeople();
+                      setStatusNotice(`Keeping ${numPeople} people only; objects removed`);
+                    }}
+                    title="Remove all objects, keeping only people"
+                    data-testid="keep-people-only-btn"
+                  >
+                    Keep People ({numPeople})
+                  </button>
+                  <button
+                    type="button"
+                    className={styles.filterPill}
+                    style={{ flex: 1 }}
+                    onClick={() => {
+                      keepOnlyObjects();
+                      setStatusNotice(`Keeping ${numObjects} objects only; people removed`);
+                    }}
+                    title="Remove all people, keeping only objects"
+                    data-testid="keep-objects-only-btn"
+                  >
+                    Keep Objects ({numObjects})
+                  </button>
+                </div>
+              );
+            }
+            return null;
+          })()
+        )}
+
         {entities.length > 0 ? (
           <div className={styles.personList} data-testid="person-entities-list">
             {entities.map((entity, idx) => {
@@ -597,7 +645,17 @@ export const ContextualPanel: React.FC = () => {
                       title={entity.visibility === false ? "Show entity in 3D scene" : "Hide entity in 3D scene"}
                       data-testid={`toggle-visibility-${entity.id}`}
                     >
-                      {entity.visibility === false ? "👁️‍🗨️" : "👁️"}
+                      {entity.visibility === false ? (
+                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                          <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24" />
+                          <line x1="1" y1="1" x2="23" y2="23" />
+                        </svg>
+                      ) : (
+                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                          <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
+                          <circle cx="12" cy="12" r="3" />
+                        </svg>
+                      )}
                     </button>
                     <span
                       className={styles.colorDot}
@@ -630,6 +688,45 @@ export const ContextualPanel: React.FC = () => {
                       {entity.reconstruction?.status === "ready" ? "Mesh" : "In-Scene"}
                     </span>
                     <span className={styles.confidenceBadge}>{conf}</span>
+
+                    {/* Quick Isolate Button */}
+                    <button
+                      type="button"
+                      className={styles.iconActionBtn}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        keepOnlyEntity(entity.id);
+                        setStatusNotice(`Keeping only ${entity.name || "selected entity"}`);
+                      }}
+                      title="Keep only this entity (remove all others)"
+                      data-testid={`isolate-entity-${entity.id}`}
+                    >
+                      <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                        <circle cx="12" cy="12" r="10" />
+                        <line x1="22" y1="12" x2="18" y2="12" />
+                        <line x1="6" y1="12" x2="2" y2="12" />
+                        <line x1="12" y1="6" x2="12" y2="2" />
+                        <line x1="12" y1="22" x2="12" y2="18" />
+                      </svg>
+                    </button>
+
+                    {/* Quick Delete / Remove Button */}
+                    <button
+                      type="button"
+                      className={`${styles.iconActionBtn} ${styles.danger}`}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        removeEntity(entity.id);
+                        setStatusNotice(`Removed ${entity.name || "entity"} from scene`);
+                      }}
+                      title="Remove entity from 3D scene"
+                      data-testid={`remove-entity-${entity.id}`}
+                    >
+                      <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                        <polyline points="3 6 5 6 21 6" />
+                        <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+                      </svg>
+                    </button>
                   </div>
                 </div>
               );
@@ -640,6 +737,76 @@ export const ContextualPanel: React.FC = () => {
             {currentScene
               ? "No people or objects detected in scene yet."
               : "Upload a photograph to detect people and objects."}
+          </div>
+        )}
+
+        {/* Excluded / Removed Entities Section */}
+        {removedEntities.length > 0 && (
+          <div style={{ marginTop: "10px", padding: "8px", borderRadius: "6px", backgroundColor: "#141418", border: "1px dashed #3f3f46" }} data-testid="excluded-entities-box">
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "6px" }}>
+              <span style={{ fontSize: "11px", color: "#a1a1aa", fontWeight: 600 }}>
+                Excluded Entities ({removedEntities.length})
+              </span>
+              <button
+                type="button"
+                onClick={() => {
+                  restoreAllEntities();
+                  setStatusNotice("Restored all excluded entities to scene");
+                }}
+                style={{
+                  fontSize: "10px",
+                  padding: "2px 6px",
+                  borderRadius: "3px",
+                  background: "transparent",
+                  color: "#38bdf8",
+                  border: "1px solid #38bdf8",
+                  cursor: "pointer",
+                }}
+                data-testid="restore-all-entities-btn"
+              >
+                Restore All
+              </button>
+            </div>
+            <div style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
+              {removedEntities.map((re) => (
+                <div
+                  key={`removed-${re.id}`}
+                  style={{
+                    display: "flex",
+                    justifyContent: "space-between",
+                    alignItems: "center",
+                    fontSize: "10px",
+                    color: "#9ca3af",
+                    padding: "3px 6px",
+                    backgroundColor: "#1c1c22",
+                    borderRadius: "4px",
+                  }}
+                >
+                  <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: "160px" }}>
+                    {re.name || re.id} {re.objectClass ? `(${re.objectClass})` : ""}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      restoreEntity(re.id);
+                      setStatusNotice(`Restored ${re.name || "entity"} to scene`);
+                    }}
+                    style={{
+                      background: "none",
+                      border: "none",
+                      color: "#34d399",
+                      cursor: "pointer",
+                      fontWeight: 600,
+                      fontSize: "10px",
+                    }}
+                    data-testid={`restore-entity-${re.id}`}
+                    title="Restore to 3D scene"
+                  >
+                    Restore
+                  </button>
+                </div>
+              ))}
+            </div>
           </div>
         )}
 
@@ -713,6 +880,64 @@ export const ContextualPanel: React.FC = () => {
                 </span>
               </div>
             )}
+            {/* Quick Actions for Selected Entity */}
+            <div style={{ display: "flex", gap: "6px", marginTop: "6px", marginBottom: "8px" }} data-testid="inspector-entity-actions">
+              <button
+                type="button"
+                className={styles.filterPill}
+                style={{
+                  flex: 1,
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  gap: "4px",
+                  border: "1px solid #38bdf8",
+                  color: "#38bdf8",
+                  backgroundColor: "rgba(56, 189, 248, 0.1)",
+                }}
+                onClick={() => {
+                  keepOnlyEntity(selectedEntity.id);
+                  setStatusNotice(`Isolated ${selectedEntity.name || "selected entity"}; other entities removed`);
+                }}
+                title="Keep only this entity, removing all other entities from 3D scene"
+                data-testid="inspector-isolate-entity-btn"
+              >
+                <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <circle cx="12" cy="12" r="10" />
+                  <line x1="22" y1="12" x2="18" y2="12" />
+                  <line x1="6" y1="12" x2="2" y2="12" />
+                  <line x1="12" y1="6" x2="12" y2="2" />
+                  <line x1="12" y1="22" x2="12" y2="18" />
+                </svg>
+                Keep Only This
+              </button>
+              <button
+                type="button"
+                className={styles.filterPill}
+                style={{
+                  flex: 1,
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  gap: "4px",
+                  border: "1px solid rgba(239, 68, 68, 0.5)",
+                  color: "#f87171",
+                  backgroundColor: "rgba(239, 68, 68, 0.1)",
+                }}
+                onClick={() => {
+                  removeEntity(selectedEntity.id);
+                  setStatusNotice(`Removed ${selectedEntity.name || "entity"} from scene`);
+                }}
+                title="Remove this entity from 3D scene"
+                data-testid="inspector-remove-entity-btn"
+              >
+                <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <polyline points="3 6 5 6 21 6" />
+                  <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+                </svg>
+                Remove Entity
+              </button>
+            </div>
             {selectedEntity.detection && (
               <>
                 <div className={styles.propRow}>

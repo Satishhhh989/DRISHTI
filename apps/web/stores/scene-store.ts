@@ -7,7 +7,7 @@
  */
 
 import { create } from "zustand";
-import { Scene, VisualizationMode, RepresentationMode, Transform, createInitialScene } from "@photo-to-3d/scene-schema";
+import { Scene, SceneEntity, VisualizationMode, RepresentationMode, Transform, createInitialScene } from "@photo-to-3d/scene-schema";
 import { ProcessingEvent } from "@photo-to-3d/shared-types";
 import { apiClient } from "@/lib/api-client";
 import { assetCache } from "@/lib/asset-cache";
@@ -36,6 +36,7 @@ interface SceneState {
   lastSequenceNumber: number;
   stages: Record<string, StageProgressInfo>;
   partialFailures: Array<{ stage: string; message: string }>;
+  removedEntities: SceneEntity[];
 
   // Actions
   setQualityPreset: (preset: QualityPreset) => void;
@@ -56,6 +57,12 @@ interface SceneState {
   ) => void;
   cancelActiveJob: () => Promise<void>;
   toggleEntityVisibility: (entityId: string) => void;
+  removeEntity: (entityId: string) => void;
+  keepOnlyEntity: (entityId: string) => void;
+  keepOnlyPeople: () => void;
+  keepOnlyObjects: () => void;
+  restoreEntity: (entityId: string) => void;
+  restoreAllEntities: () => void;
   updateEntityTransform: (entityId: string, transform: Transform) => void;
   resetEntityTransform: (entityId: string) => void;
   setEntityAnimation: (
@@ -89,6 +96,7 @@ export const useSceneStore = create<SceneState>((set, get) => ({
   lastSequenceNumber: 0,
   stages: {},
   partialFailures: [],
+  removedEntities: [],
 
   setQualityPreset: (preset: QualityPreset) => set({ qualityPreset: preset }),
 
@@ -230,6 +238,7 @@ export const useSceneStore = create<SceneState>((set, get) => ({
       lastSequenceNumber: 0,
       stages: {},
       partialFailures: [],
+      removedEntities: [],
     });
   },
 
@@ -273,6 +282,132 @@ export const useSceneStore = create<SceneState>((set, get) => ({
         ...currentScene,
         entities: updatedEntities,
       },
+    });
+  },
+
+  removeEntity: (entityId) => {
+    const { currentScene, removedEntities } = get();
+    if (!currentScene) return;
+    const target = currentScene.entities.find((e) => e.id === entityId);
+    if (!target) return;
+
+    const updatedEntities = currentScene.entities.filter((e) => e.id !== entityId);
+
+    // Also clean up sceneGraph nodes if assembled
+    let updatedSceneGraph = currentScene.sceneGraph;
+    if (updatedSceneGraph) {
+      const nodes = { ...updatedSceneGraph.nodes };
+      delete nodes[`node-${entityId}`];
+      for (const [nid, n] of Object.entries(nodes)) {
+        if (n.entityId === entityId) {
+          delete nodes[nid];
+        }
+      }
+      updatedSceneGraph = {
+        ...updatedSceneGraph,
+        nodes,
+      };
+    }
+
+    set({
+      currentScene: {
+        ...currentScene,
+        entities: updatedEntities,
+        sceneGraph: updatedSceneGraph,
+      },
+      removedEntities: [...removedEntities, target],
+    });
+
+    if (!currentScene.id.startsWith("local-")) {
+      apiClient.deleteEntity(currentScene.id, entityId).catch(() => {});
+    }
+  },
+
+  keepOnlyEntity: (entityId) => {
+    const { currentScene, removedEntities } = get();
+    if (!currentScene) return;
+    const toKeep = currentScene.entities.find((e) => e.id === entityId);
+    if (!toKeep) return;
+    const toRemove = currentScene.entities.filter((e) => e.id !== entityId);
+
+    set({
+      currentScene: {
+        ...currentScene,
+        entities: [toKeep],
+      },
+      removedEntities: [...removedEntities, ...toRemove],
+    });
+
+    if (!currentScene.id.startsWith("local-")) {
+      apiClient.keepOnlyEntities(currentScene.id, [entityId]).catch(() => {});
+    }
+  },
+
+  keepOnlyPeople: () => {
+    const { currentScene, removedEntities } = get();
+    if (!currentScene) return;
+    const toKeep = currentScene.entities.filter((e) => e.entityType === "person");
+    const toRemove = currentScene.entities.filter((e) => e.entityType !== "person");
+    if (toRemove.length === 0) return;
+
+    set({
+      currentScene: {
+        ...currentScene,
+        entities: toKeep,
+      },
+      removedEntities: [...removedEntities, ...toRemove],
+    });
+
+    if (!currentScene.id.startsWith("local-")) {
+      apiClient.keepOnlyEntities(currentScene.id, toKeep.map((e) => e.id)).catch(() => {});
+    }
+  },
+
+  keepOnlyObjects: () => {
+    const { currentScene, removedEntities } = get();
+    if (!currentScene) return;
+    const toKeep = currentScene.entities.filter((e) => e.entityType === "object");
+    const toRemove = currentScene.entities.filter((e) => e.entityType !== "object");
+    if (toRemove.length === 0) return;
+
+    set({
+      currentScene: {
+        ...currentScene,
+        entities: toKeep,
+      },
+      removedEntities: [...removedEntities, ...toRemove],
+    });
+
+    if (!currentScene.id.startsWith("local-")) {
+      apiClient.keepOnlyEntities(currentScene.id, toKeep.map((e) => e.id)).catch(() => {});
+    }
+  },
+
+  restoreEntity: (entityId) => {
+    const { currentScene, removedEntities } = get();
+    if (!currentScene) return;
+    const target = removedEntities.find((e) => e.id === entityId);
+    if (!target) return;
+
+    set({
+      currentScene: {
+        ...currentScene,
+        entities: [...currentScene.entities, target],
+      },
+      removedEntities: removedEntities.filter((e) => e.id !== entityId),
+    });
+  },
+
+  restoreAllEntities: () => {
+    const { currentScene, removedEntities } = get();
+    if (!currentScene || removedEntities.length === 0) return;
+
+    set({
+      currentScene: {
+        ...currentScene,
+        entities: [...currentScene.entities, ...removedEntities],
+      },
+      removedEntities: [],
     });
   },
 
@@ -411,6 +546,7 @@ export const useSceneStore = create<SceneState>((set, get) => ({
       lastSequenceNumber: 0,
       stages: {},
       partialFailures: [],
+      removedEntities: [],
     });
   },
 }));

@@ -145,3 +145,52 @@ async def reset_entity_transform(scene_id: str, entity_id: str) -> Scene:
 
     return scene_manager.update_scene(scene)
 
+
+class FilterEntitiesRequest(BaseModel):
+    keep_entity_ids: List[str] = Field(..., description="List of entity IDs to preserve in scene")
+
+
+@router.delete("/{scene_id}/entities/{entity_id}", response_model=Scene)
+async def delete_scene_entity(scene_id: str, entity_id: str) -> Scene:
+    """Removes a specific detected entity (person or object) from the 3D scene."""
+    scene = scene_manager.get_scene(scene_id)
+    initial_count = len(scene.entities)
+    scene.entities = [e for e in scene.entities if e.id != entity_id]
+    if len(scene.entities) == initial_count:
+        raise NotFoundError("Entity", entity_id)
+
+    # Clean up scene graph nodes if assembled
+    if scene.scene_graph and scene.scene_graph.nodes:
+        node_id_to_remove = None
+        for nid, node in list(scene.scene_graph.nodes.items()):
+            if node.entity_id == entity_id or nid == f"node-{entity_id}":
+                node_id_to_remove = nid
+                break
+        if node_id_to_remove:
+            scene.scene_graph.nodes.pop(node_id_to_remove, None)
+            for node in scene.scene_graph.nodes.values():
+                if node_id_to_remove in node.children:
+                    node.children = [c for c in node.children if c != node_id_to_remove]
+
+    return scene_manager.update_scene(scene)
+
+
+@router.post("/{scene_id}/entities/keep-only", response_model=Scene)
+async def keep_only_scene_entities(scene_id: str, request: FilterEntitiesRequest) -> Scene:
+    """Filters the scene to keep only the specified entity IDs, discarding all others."""
+    scene = scene_manager.get_scene(scene_id)
+    keep_set = set(request.keep_entity_ids)
+    scene.entities = [e for e in scene.entities if e.id in keep_set]
+
+    # Clean up scene graph nodes
+    if scene.scene_graph and scene.scene_graph.nodes:
+        for nid, node in list(scene.scene_graph.nodes.items()):
+            if node.entity_id and node.entity_id not in keep_set:
+                scene.scene_graph.nodes.pop(nid, None)
+                for other in scene.scene_graph.nodes.values():
+                    if nid in other.children:
+                        other.children = [c for c in other.children if c != nid]
+
+    return scene_manager.update_scene(scene)
+
+

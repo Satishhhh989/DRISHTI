@@ -202,37 +202,41 @@ export const PhotoPlane: React.FC<PhotoPlaneProps> = ({
       {/* Segmentation Mask Overlays (2D segmentation mode or Cinematic Stage 3) */}
       {!isReferencePlane &&
         (visualizationMode === "segmentation" || (isCinematicActive && currentStageId === "stage_segmentation")) &&
-        entities.map((entity, idx) => {
-          const color = PALETTE[idx % PALETTE.length];
-          return (
-            <SegmentationMaskLayer
-              key={`mask-${entity.id}`}
-              entity={entity}
-              planeWidth={width}
-              planeHeight={height}
-              colorHex={color.hex}
-            />
-          );
-        })}
+        entities
+          .filter((entity) => entity.visibility !== false)
+          .map((entity, idx) => {
+            const color = PALETTE[idx % PALETTE.length];
+            return (
+              <SegmentationMaskLayer
+                key={`mask-${entity.id}`}
+                entity={entity}
+                planeWidth={width}
+                planeHeight={height}
+                colorHex={color.hex}
+              />
+            );
+          })}
 
       {/* Detection Bounding Boxes (2D detection/segmentation mode or Cinematic Stage 2/3) */}
       {!isReferencePlane &&
         (visualizationMode === "detection" ||
           visualizationMode === "segmentation" ||
           (isCinematicActive && (currentStageId === "stage_detection" || currentStageId === "stage_segmentation"))) &&
-        entities.map((entity, idx) => {
-          const color = PALETTE[idx % PALETTE.length];
-          return (
-            <DetectionBox
-              key={`box-${entity.id}`}
-              entity={entity}
-              planeWidth={width}
-              planeHeight={height}
-              colorHex={color.hex}
-              colorCss={color.css}
-            />
-          );
-        })}
+        entities
+          .filter((entity) => entity.visibility !== false)
+          .map((entity, idx) => {
+            const color = PALETTE[idx % PALETTE.length];
+            return (
+              <DetectionBox
+                key={`box-${entity.id}`}
+                entity={entity}
+                planeWidth={width}
+                planeHeight={height}
+                colorHex={color.hex}
+                colorCss={color.css}
+              />
+            );
+          })}
     </group>
   );
 };
