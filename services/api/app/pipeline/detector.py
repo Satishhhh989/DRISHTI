@@ -5,7 +5,7 @@ assigns stable entity IDs, and captures model confidence.
 """
 
 from pathlib import Path
-from typing import List, Optional, Tuple
+from typing import List, Optional, Tuple, Union
 import uuid
 from PIL import Image
 
@@ -52,6 +52,20 @@ class YoloPersonDetector(IPersonDetector):
         confidence_threshold: float = 0.35,
     ) -> List[DetectionResult]:
         """Runs person detection (class 0 in COCO) and returns normalized and pixel coordinates."""
+        return self.detect_entities(
+            image_path=image_path,
+            confidence_threshold=confidence_threshold,
+            detect_objects=False,
+        )
+
+    def detect_entities(
+        self,
+        image_path: Union[Path, str],
+        confidence_threshold: float = 0.35,
+        detect_objects: bool = True,
+    ) -> List[DetectionResult]:
+        """Runs multi-entity detection (persons and salient objects) using YOLOv8."""
+        image_path = Path(image_path)
         model = self._get_or_load_model()
 
         # Read dimensions to normalize coordinates accurately
@@ -61,16 +75,19 @@ class YoloPersonDetector(IPersonDetector):
         # Run inference on the verified device
         device = device_manager.device
         logger.info(
-            f"Running YOLO person detection on '{image_path.name}' ({orig_w}x{orig_h}) using device='{device}' (conf={confidence_threshold})"
+            f"Running YOLO detection on '{image_path.name}' ({orig_w}x{orig_h}) using device='{device}' (conf={confidence_threshold}, detect_objects={detect_objects})"
         )
 
-        results = model.predict(
-            source=str(image_path),
-            classes=[0],  # COCO class 0: person
-            conf=confidence_threshold,
-            device=device,
-            verbose=False,
-        )
+        predict_kwargs: dict = {
+            "source": str(image_path),
+            "conf": confidence_threshold,
+            "device": device,
+            "verbose": False,
+        }
+        if not detect_objects:
+            predict_kwargs["classes"] = [0]  # Only person
+
+        results = model.predict(**predict_kwargs)
 
         detections: List[DetectionResult] = []
         if not results or len(results) == 0:
@@ -80,8 +97,12 @@ class YoloPersonDetector(IPersonDetector):
         if boxes is None or len(boxes) == 0:
             return detections
 
+        class_names = results[0].names or {}
+
         for idx in range(len(boxes)):
             box = boxes[idx]
+            cls_id = int(box.cls[0])
+            class_name = class_names.get(cls_id, f"class_{cls_id}").lower()
             xyxy: List[float] = box.xyxy[0].tolist()  # [x1, y1, x2, y2] in pixels
             conf = float(box.conf[0])
 
@@ -93,6 +114,11 @@ class YoloPersonDetector(IPersonDetector):
 
             # Validate non-degenerate box
             if x2 <= x1 or y2 <= y1:
+                continue
+
+            # Minimum area filter for small noisy objects (must be at least 0.1% of image)
+            box_area_ratio = ((x2 - x1) * (y2 - y1)) / float(orig_w * orig_h)
+            if cls_id != 0 and box_area_ratio < 0.001:
                 continue
 
             # Normalized coordinates in [0, 1]
@@ -112,8 +138,10 @@ class YoloPersonDetector(IPersonDetector):
                 y_max=y_max,
             )
 
-            # Generate stable entity ID
-            entity_id = f"person-{uuid.uuid4().hex[:8]}"
+            is_person = (cls_id == 0)
+            entity_type = "person" if is_person else "object"
+            entity_id = f"person-{uuid.uuid4().hex[:8]}" if is_person else f"object-{uuid.uuid4().hex[:8]}"
+            label = "person" if is_person else class_name
 
             detections.append(
                 DetectionResult(
@@ -121,10 +149,14 @@ class YoloPersonDetector(IPersonDetector):
                     pixel_box=(round(x1, 2), round(y1, 2), round(x2, 2), round(y2, 2)),
                     confidence=round(conf, 4),
                     entity_id=entity_id,
-                    label="person",
+                    label=label,
                     model=self.model_key,
+                    entity_type=entity_type,
+                    object_class=None if is_person else class_name,
                 )
             )
 
-        logger.info(f"YOLO detector identified {len(detections)} people in '{image_path.name}'")
+        people_count = sum(1 for d in detections if d.entity_type == "person")
+        object_count = sum(1 for d in detections if d.entity_type == "object")
+        logger.info(f"YOLO detector identified {people_count} people and {object_count} objects in '{image_path.name}'")
         return detections

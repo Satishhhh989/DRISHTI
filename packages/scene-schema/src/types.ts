@@ -61,7 +61,7 @@ export interface BoundingBox2D {
   yMax: number;
 }
 
-export type EntityType = "person" | "background" | "environment" | "prop";
+export type EntityType = "person" | "object" | "background" | "environment" | "prop";
 
 export type ReconstructionStatus = 
   | "unstarted" 
@@ -239,7 +239,7 @@ export interface PlacementProvenance {
 export interface SceneGraphNode {
   id: string;
   name: string;
-  nodeType: "root" | "camera" | "light" | "reference_plane" | "ground_plane" | "person";
+  nodeType: "root" | "camera" | "light" | "reference_plane" | "ground_plane" | "person" | "object";
   entityId?: string | null;
   transform: Transform;
   children: string[];
@@ -267,6 +267,7 @@ export interface SceneAssemblyReport {
 export interface SceneEntity {
   id: string;
   entityType: EntityType;
+  objectClass?: string;
   sourceImageId: string;
   name?: string;
   boundingBox?: BoundingBox2D;

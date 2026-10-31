@@ -149,6 +149,7 @@ export function normalizeEntity(e: any): SceneEntity {
   return {
     id: e.id,
     entityType: e.entityType || e.entity_type || "person",
+    objectClass: e.objectClass || e.object_class || undefined,
     sourceImageId: e.sourceImageId || e.source_image_id || "",
     name: e.name,
     boundingBox,

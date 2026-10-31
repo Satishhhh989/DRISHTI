@@ -13,7 +13,7 @@ from app.schemas.common import (
 
 SCHEMA_VERSION = "1.0.0"
 
-EntityType = Literal["person", "background", "environment", "prop"]
+EntityType = Literal["person", "object", "background", "environment", "prop"]
 ReconstructionStatus = Literal["unstarted", "detecting", "reconstructing", "ready", "failed"]
 RepresentationStatus = Literal["unavailable", "pending", "processing", "ready", "failed"]
 SceneProcessingStatus = Literal["unprocessed", "processing", "ready", "error"]
@@ -214,6 +214,7 @@ class HumanReconstructionData(BaseModel):
 class SceneEntity(BaseModel):
     id: str = Field(..., min_length=1, description="Unique entity identifier")
     entity_type: EntityType = Field(default="person")
+    object_class: Optional[str] = None
     source_image_id: str = Field(..., min_length=1)
     name: Optional[str] = None
     bounding_box: Optional[BoundingBox2D] = None
@@ -322,7 +323,7 @@ class SourceImageMetadata(BaseModel):
 class SceneGraphNode(BaseModel):
     id: str
     name: str
-    node_type: Literal["root", "camera", "light", "reference_plane", "ground_plane", "person"]
+    node_type: Literal["root", "camera", "light", "reference_plane", "ground_plane", "person", "object"]
     entity_id: Optional[str] = None
     transform: Transform = Field(default_factory=Transform)
     children: List[str] = Field(default_factory=list)

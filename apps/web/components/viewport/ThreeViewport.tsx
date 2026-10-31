@@ -174,63 +174,65 @@ export const ThreeViewport: React.FC = () => {
       ) : (
         <ViewportErrorBoundary>
           <div className={styles.canvasWrapper} data-testid="r3f-canvas-wrapper">
-            <Canvas
-              camera={{ position: [0, 1.2, 3.8], fov: 45, near: 0.1, far: 100 }}
-              gl={{
-                antialias: true,
-                alpha: false,
-                powerPreference: "high-performance",
-              }}
-              style={{ background: "#0d0d0f" }}
-            >
-              <color attach="background" args={["#0d0d0f"]} />
-              
-              {/* Lighting */}
-              <ambientLight intensity={0.7} />
-              <directionalLight position={[4, 8, 4]} intensity={0.9} castShadow />
+            {mounted && (
+              <Canvas
+                camera={{ position: [0, 1.2, 3.8], fov: 45, near: 0.1, far: 100 }}
+                gl={{
+                  antialias: true,
+                  alpha: false,
+                  powerPreference: "high-performance",
+                }}
+                style={{ background: "#0d0d0f" }}
+              >
+                <color attach="background" args={["#0d0d0f"]} />
+                
+                {/* Lighting */}
+                <ambientLight intensity={0.7} />
+                <directionalLight position={[4, 8, 4]} intensity={0.9} castShadow />
 
-              {/* Spatial Floor Reference */}
-              <GridFloor />
+                {/* Spatial Floor Reference */}
+                <GridFloor />
 
-              {/* 0. Real-time Live Reconstruction Presentation Controller */}
-              <LiveReconstructionController />
-              <CinematicSceneDirector />
+                {/* 0. Real-time Live Reconstruction Presentation Controller */}
+                <LiveReconstructionController />
+                <CinematicSceneDirector />
 
-              {/* 1. Photographic plane rendered in 3D coordinate space (Photo / Inspection Modes) */}
-              {(activeRepresentation === "photo" || (isAnalyzing && !hasReconstructedMeshes)) && photoDimensions && (
-                <PhotoPlane
-                  photoUrl={localPhotoUrl}
-                  aspectRatio={photoDimensions.aspect}
-                  isReferencePlane={false}
-                />
-              )}
+                {/* 1. Photographic plane rendered in 3D coordinate space (Photo / Inspection Modes) */}
+                {(activeRepresentation === "photo" || (isAnalyzing && !hasReconstructedMeshes)) && photoDimensions && (
+                  <PhotoPlane
+                    photoUrl={localPhotoUrl}
+                    aspectRatio={photoDimensions.aspect}
+                    isReferencePlane={false}
+                  />
+                )}
 
-              {/* 2. Hybrid Combined Scene: Photographic Reference Plane + Assembled 3D Characters */}
-              {(activeRepresentation === "combined" || isCinematicActive || (isAnalyzing && hasReconstructedMeshes)) && photoDimensions && (
-                <PhotoPlane
-                  photoUrl={localPhotoUrl}
-                  aspectRatio={photoDimensions.aspect}
-                  isReferencePlane={true}
-                />
-              )}
+                {/* 2. Hybrid Combined Scene: Photographic Reference Plane + Assembled 3D Characters */}
+                {(activeRepresentation === "combined" || isCinematicActive || (isAnalyzing && hasReconstructedMeshes)) && photoDimensions && (
+                  <PhotoPlane
+                    photoUrl={localPhotoUrl}
+                    aspectRatio={photoDimensions.aspect}
+                    isReferencePlane={true}
+                  />
+                )}
 
-              {/* 3. Reconstructed 3D Human Meshes (Wireframe, Solid, Articulated, or Combined) */}
-              {is3DMode && (
-                <HumanMeshLayer
-                  mode={
-                    (activeRepresentation === "wireframe" ||
-                    activeRepresentation === "solid3d" ||
-                    activeRepresentation === "articulated" ||
-                    activeRepresentation === "combined"
-                      ? activeRepresentation
-                      : "wireframe") as Unified3DMode
-                  }
-                />
-              )}
+                {/* 3. Reconstructed 3D Human Meshes (Wireframe, Solid, Articulated, or Combined) */}
+                {is3DMode && (
+                  <HumanMeshLayer
+                    mode={
+                      (activeRepresentation === "wireframe" ||
+                      activeRepresentation === "solid3d" ||
+                      activeRepresentation === "articulated" ||
+                      activeRepresentation === "combined"
+                        ? activeRepresentation
+                        : "wireframe") as Unified3DMode
+                    }
+                  />
+                )}
 
-              {/* Camera navigation */}
-              <CameraController />
-            </Canvas>
+                {/* Camera navigation */}
+                <CameraController />
+              </Canvas>
+            )}
           </div>
         </ViewportErrorBoundary>
       )}

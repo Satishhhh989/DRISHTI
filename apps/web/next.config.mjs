@@ -2,10 +2,7 @@
 const nextConfig = {
   transpilePackages: [
     "@photo-to-3d/scene-schema",
-    "@photo-to-3d/shared-types",
-    "three",
-    "@react-three/fiber",
-    "@react-three/drei"
+    "@photo-to-3d/shared-types"
   ],
   reactStrictMode: true,
 };

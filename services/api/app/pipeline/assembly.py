@@ -272,8 +272,8 @@ class SceneAssemblyEngine:
 
             nodes[node_id] = SceneGraphNode(
                 id=node_id,
-                name=entity.name or f"Person {entity.id}",
-                node_type="person",
+                name=entity.name or (f"Person {entity.id}" if entity.entity_type == "person" else f"Object {entity.id}"),
+                node_type="person" if entity.entity_type == "person" else "object",
                 entity_id=entity.id,
                 transform=transform,
                 children=[],

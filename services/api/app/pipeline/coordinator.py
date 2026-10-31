@@ -24,6 +24,7 @@ import io
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 import numpy as np
+from PIL import Image
 
 from app.assets.manager import asset_manager
 from app.core.logging import logger
@@ -50,6 +51,7 @@ from app.pipeline.mock import (
     MockPersonSegmentor,
 )
 from app.pipeline.models import model_manager
+from app.pipeline.object_reconstructor import object_reconstructor
 from app.pipeline.motion import (
     IPoseEstimator,
     MockPoseEstimator,
@@ -277,14 +279,22 @@ class PipelineCoordinator:
             )
 
             detector = self.get_detector(quality_preset=quality_preset)
-            detections = await asyncio.to_thread(
-                detector.detect_people,
-                photo_path,
-                confidence_threshold,
-            )
+            if hasattr(detector, "detect_entities"):
+                detections = await asyncio.to_thread(
+                    detector.detect_entities,
+                    photo_path,
+                    confidence_threshold,
+                    True,
+                )
+            else:
+                detections = await asyncio.to_thread(
+                    detector.detect_people,
+                    photo_path,
+                    confidence_threshold,
+                )
 
             num_detected = len(detections)
-            logger.info(f"Job {job_id}: {num_detected} person detections produced")
+            logger.info(f"Job {job_id}: {num_detected} entity detections produced")
 
             # Check cancellation
             if job_tracker.is_cancelled(job_id):
@@ -310,12 +320,25 @@ class PipelineCoordinator:
 
             # Progressive update: Create initial scene entities immediately
             entities: List[SceneEntity] = []
-            for idx, det in enumerate(valid_detections):
+            p_idx = 1
+            o_idx = 1
+            for det in valid_detections:
+                ent_type = getattr(det, "entity_type", "person")
+                obj_cls = getattr(det, "object_class", None)
+                if ent_type == "person":
+                    name = f"Person {p_idx}"
+                    p_idx += 1
+                else:
+                    cat_name = (obj_cls or "Object").capitalize()
+                    name = f"{cat_name} {o_idx}"
+                    o_idx += 1
+
                 entity = SceneEntity(
                     id=det.entity_id,
-                    entity_type="person",
+                    entity_type=ent_type,
+                    object_class=obj_cls,
                     source_image_id=photo_asset_id,
-                    name=f"Person {idx + 1}",
+                    name=name,
                     bounding_box=det.bounding_box,
                     transform=Transform(),
                     geometry_ref=None,
@@ -389,11 +412,18 @@ class PipelineCoordinator:
                 )
 
                 segmentor = self.get_segmentor(quality_preset=quality_preset)
-                segmentation_results = await asyncio.to_thread(
-                    segmentor.segment_people,
-                    photo_path,
-                    valid_detections,
-                )
+                if hasattr(segmentor, "segment_entities"):
+                    segmentation_results = await asyncio.to_thread(
+                        segmentor.segment_entities,
+                        photo_path,
+                        valid_detections,
+                    )
+                else:
+                    segmentation_results = await asyncio.to_thread(
+                        segmentor.segment_people,
+                        photo_path,
+                        valid_detections,
+                    )
 
                 event_emitter.emit(
                     job_id=job_id,
@@ -736,7 +766,7 @@ class PipelineCoordinator:
                     if img_for_pose is None:
                         img_for_pose = np.zeros((scene.source_image.height, scene.source_image.width, 3), dtype=np.uint8)
 
-                    entities_with_boxes = [e for e in entities if e.detection and e.detection.bounding_box]
+                    entities_with_boxes = [e for e in entities if e.entity_type == "person" and e.detection and e.detection.bounding_box]
                     boxes = [e.detection.bounding_box for e in entities_with_boxes]
                     all_poses = pose_estimator.estimate_poses(img_for_pose, boxes)
 
@@ -819,6 +849,127 @@ class PipelineCoordinator:
                             seg_res = seg_map.get(entity.id)
                             mask_bytes = seg_res.mask_png_bytes if seg_res else None
                             depth_info = entity.depth
+
+                            # Object Reconstruction Branch
+                            if entity.entity_type == "object":
+                                mask_np = None
+                                if mask_bytes:
+                                    with Image.open(io.BytesIO(mask_bytes)) as m_img:
+                                        mask_np = np.array(m_img.convert("L"))
+                                if mask_np is None:
+                                    mask_np = np.zeros((img_rgb.shape[0], img_rgb.shape[1]), dtype=np.uint8)
+                                    box = entity.detection.bounding_box
+                                    x1 = int(box.x_min * img_rgb.shape[1])
+                                    y1 = int(box.y_min * img_rgb.shape[0])
+                                    x2 = int(box.x_max * img_rgb.shape[1])
+                                    y2 = int(box.y_max * img_rgb.shape[0])
+                                    mask_np[y1:y2, x1:x2] = 255
+
+                                obj_rec_result = object_reconstructor.reconstruct_object(
+                                    image_rgb=img_rgb,
+                                    mask_uint8=mask_np,
+                                    normalized_depth=depth_result.normalized_depth if depth_result else None,
+                                    pixel_box=tuple(entity.detection.pixel_box),
+                                    category_name=entity.object_class or "object",
+                                    entity_id=entity.id,
+                                    aspect_ratio=scene.source_image.aspect_ratio if scene.source_image else 1.333,
+                                )
+
+                                # Save GLB asset
+                                mesh_filename = f"{scene_id}_{entity.id}.glb"
+                                mesh_asset = asset_manager.register_mesh(
+                                    content=obj_rec_result.glb_bytes,
+                                    filename=mesh_filename,
+                                    scene_id=scene_id,
+                                    entity_id=entity.id,
+                                )
+
+                                # Compute spatial transform for the object
+                                box = entity.detection.bounding_box
+                                img_h, img_w = img_rgb.shape[:2]
+                                aspect = img_w / img_h
+                                plane_h = 2.0
+                                plane_w = plane_h * aspect
+
+                                cx = (box.x_min + box.x_max) / 2.0
+                                cy = (box.y_min + box.y_max) / 2.0
+                                pos_x = float((cx - 0.5) * plane_w)
+                                pos_y = float((1.0 - cy) * plane_h)
+
+                                if depth_info and depth_info.median_proximity is not None:
+                                    prox = float(np.clip(depth_info.median_proximity, 0.0, 1.0))
+                                    pos_z = float((prox - 0.5) * 0.4)
+                                else:
+                                    pos_z = 0.0
+
+                                # Scale factor matching 2D bounding box
+                                v_min_y = float(obj_rec_result.bounds_min[1])
+                                v_max_y = float(obj_rec_result.bounds_max[1])
+                                mesh_h = max(0.05, v_max_y - v_min_y)
+                                box_h = (box.y_max - box.y_min) * plane_h
+                                scale_val = float(np.clip(box_h / mesh_h, 0.2, 3.0))
+
+                                entity_transform = Transform(
+                                    position=Vector3D(x=round(pos_x, 4), y=round(pos_y, 4), z=round(pos_z, 4)),
+                                    rotation=EulerRotation(x=0.0, y=0.0, z=0.0),
+                                    scale=Vector3D(x=round(scale_val, 4), y=round(scale_val, 4), z=round(scale_val, 4)),
+                                )
+                                entity.transform = entity_transform
+
+                                entity.reconstruction = HumanReconstructionData(
+                                    status="ready",
+                                    mesh_asset_id=mesh_asset.asset_id,
+                                    mesh_url=f"/api/v1/assets/meshes/{mesh_asset.filename}",
+                                    metadata_asset_id=None,
+                                    model_provenance=ModelProvenance(
+                                        name=obj_rec_result.model_name,
+                                        version=obj_rec_result.model_version,
+                                        device=obj_rec_result.device,
+                                    ),
+                                    geometry_metadata=GeometryMetadata(
+                                        vertex_count=obj_rec_result.vertex_count,
+                                        face_count=obj_rec_result.face_count,
+                                        bounds=MeshBounds(
+                                            min=obj_rec_result.bounds_min,
+                                            max=obj_rec_result.bounds_max,
+                                        ),
+                                        dimensions=obj_rec_result.dimensions,
+                                    ),
+                                    coordinate_convention=CoordinateConvention(
+                                        up="+Y", forward="+Z", right="+X", units="meters"
+                                    ),
+                                    transform=entity_transform,
+                                    texture_availability="full",
+                                    quality_score=obj_rec_result.quality_score,
+                                    quality_preset=quality_preset,
+                                    metric_status="measured",
+                                    stance_description=f"Object: {entity.object_class or 'Prop'}",
+                                    reconstructed_at=datetime.now(timezone.utc).isoformat(),
+                                )
+                                entity.geometry_ref = mesh_asset.asset_id
+                                successful_meshes += 1
+                                scene_manager.update_scene(scene)
+
+                                event_emitter.emit(
+                                    job_id=job_id,
+                                    scene_id=scene_id,
+                                    event_type="asset_ready",
+                                    stage_identifier="human_reconstruction",
+                                    status="running",
+                                    progress=0.91 + (0.03 * (idx / total_people)),
+                                    entity_id=entity.id,
+                                    asset_reference=AssetReference(
+                                        asset_id=mesh_asset.asset_id,
+                                        asset_type="mesh",
+                                        uri=f"/api/v1/assets/meshes/{mesh_asset.filename}",
+                                        mime_type="model/gltf-binary",
+                                        size_bytes=mesh_asset.size_bytes,
+                                    ),
+                                    message=f"3D object mesh ready for {entity.name or entity.id} ({idx} of {total_people}).",
+                                )
+                                continue
+
+                            # Human Reconstruction Branch
                             matched_pose = pose_results_by_entity.get(entity.id)
 
                             rec_kwargs: Dict[str, Any] = {
@@ -1068,6 +1219,8 @@ class PipelineCoordinator:
 
             successful_skeletons = 0
             for entity in scene.entities:
+                if entity.entity_type != "person":
+                    continue
                 try:
                     matched_pose = pose_results_by_entity.get(entity.id)
                     verts = reconstructed_vertices.get(entity.id) if 'reconstructed_vertices' in locals() else None
@@ -1129,6 +1282,8 @@ class PipelineCoordinator:
 
             successful_rigs = 0
             for entity in scene.entities:
+                if entity.entity_type != "person":
+                    continue
                 try:
                     if entity.skeleton and entity.reconstruction and entity.reconstruction.status == "ready":
                         verts = reconstructed_vertices.get(entity.id) if 'reconstructed_vertices' in locals() else None
@@ -1209,6 +1364,8 @@ class PipelineCoordinator:
 
             prepared_animations = 0
             for entity in scene.entities:
+                if entity.entity_type != "person":
+                    continue
                 try:
                     if entity.rig and entity.rig.status == "rigged" and entity.skeleton:
                         is_seated = bool(

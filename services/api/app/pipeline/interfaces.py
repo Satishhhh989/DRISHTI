@@ -12,7 +12,7 @@ from app.schemas.scene import SceneEntity
 
 
 class DetectionResult:
-    """Standardized multi-person detection result."""
+    """Standardized multi-entity detection result (persons and objects)."""
 
     def __init__(
         self,
@@ -22,6 +22,8 @@ class DetectionResult:
         entity_id: str,
         label: str = "person",
         model: str = "yolov8n-seg",
+        entity_type: str = "person",
+        object_class: Optional[str] = None,
     ):
         self.bounding_box = bounding_box
         self.pixel_box = pixel_box
@@ -29,6 +31,8 @@ class DetectionResult:
         self.entity_id = entity_id
         self.label = label
         self.model = model
+        self.entity_type = entity_type
+        self.object_class = object_class
 
 
 class SegmentationResult:

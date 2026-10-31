@@ -89,7 +89,7 @@ export function validateEntity(entity: unknown, index: number): ValidationError[
     errors.push({ path: `${prefix}.id`, message: "Entity ID is required and must be non-empty", code: "REQUIRED_FIELD" });
   }
 
-  if (!e.entityType || !["person", "background", "environment", "prop"].includes(e.entityType)) {
+  if (!e.entityType || !["person", "object", "background", "environment", "prop"].includes(e.entityType)) {
     errors.push({ path: `${prefix}.entityType`, message: "Invalid or missing entityType", code: "INVALID_ENUM" });
   }
 

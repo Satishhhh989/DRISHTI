@@ -555,10 +555,10 @@ export const ContextualPanel: React.FC = () => {
         )}
       </section>
 
-      {/* Detected People List */}
+      {/* Detected Entities List (People & Objects) */}
       <section className={styles.section}>
         <div className={styles.sectionHeader}>
-          <span>Detected People</span>
+          <span>Detected People & Objects</span>
           <span className={styles.propValue}>{entities.length}</span>
         </div>
 
@@ -603,7 +603,23 @@ export const ContextualPanel: React.FC = () => {
                       className={styles.colorDot}
                       style={{ backgroundColor: colorCss }}
                     />
-                    <span className={styles.personName}>{entity.name || `Person ${idx + 1}`}</span>
+                    <span className={styles.personName}>{entity.name || `Entity ${idx + 1}`}</span>
+                    {entity.objectClass && (
+                      <span
+                        style={{
+                          fontSize: "9px",
+                          padding: "1px 5px",
+                          borderRadius: "3px",
+                          backgroundColor: "rgba(56, 189, 248, 0.15)",
+                          color: "#38bdf8",
+                          fontWeight: 600,
+                          textTransform: "uppercase",
+                          letterSpacing: "0.04em",
+                        }}
+                      >
+                        {entity.objectClass}
+                      </span>
+                    )}
                   </div>
                   <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
                     <span
@@ -622,8 +638,8 @@ export const ContextualPanel: React.FC = () => {
         ) : (
           <div className={styles.emptyNotice} data-testid="zero-person-notice">
             {currentScene
-              ? "No people detected in scene yet."
-              : "Upload a photograph to detect people."}
+              ? "No people or objects detected in scene yet."
+              : "Upload a photograph to detect people and objects."}
           </div>
         )}
 
@@ -687,8 +703,16 @@ export const ContextualPanel: React.FC = () => {
             </div>
             <div className={styles.propRow}>
               <span className={styles.propLabel}>Type</span>
-              <span className={styles.propValue}>{selectedEntity.entityType}</span>
+              <span className={styles.propValue} style={{ textTransform: "capitalize" }}>{selectedEntity.entityType}</span>
             </div>
+            {selectedEntity.objectClass && (
+              <div className={styles.propRow}>
+                <span className={styles.propLabel}>Category</span>
+                <span className={styles.propValue} style={{ textTransform: "capitalize", color: "#38bdf8", fontWeight: 600 }}>
+                  {selectedEntity.objectClass}
+                </span>
+              </div>
+            )}
             {selectedEntity.detection && (
               <>
                 <div className={styles.propRow}>
