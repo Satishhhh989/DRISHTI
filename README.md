@@ -1,197 +1,285 @@
-# DRISHTI: PHOTO → 3D ENGINE
+# DRISHTI: Photo to 3D Spatial Reconstruction Engine
 
-A local-first AI-powered spatial reconstruction engine that transforms ordinary multi-person photographs into interactive, animated 3D scenes.
+DRISHTI is a local-first spatial reconstruction application that reconstructs multi-person 3D scenes from a single photograph. It combines deep learning models for person detection, instance segmentation, monocular metric depth estimation, human mesh recovery, and skeletal kinematics into a coordinated local pipeline.
 
-Current Status: **Phase 10: Integration, Testing, Security Hardening & Release (COMPLETED — v1.0.0 Final Release)**
-
----
-
-## Capabilities (v1.0.0 Final Release)
-
-- **Local-First AI Architecture**: Runs entirely offline on the user's machine without any external cloud vision APIs, external telemetry, or data exfiltration.
-- **Hardware Acceleration**: Automatic capability discovery and execution on Apple Silicon Metal Performance Shaders (`mps`), NVIDIA GPU (`cuda`), and optimized multi-threaded CPU fallback.
-- **Security & Privacy Hardening (Phase 10)**:
-  - **Loopback Enforcement**: REST API binds strictly to `127.0.0.1:8000` with CORS restricted to local browser origins (`http://localhost:3000`, `http://127.0.0.1:3000`).
-  - **HTTP Security Headers**: Emits `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`, `Referrer-Policy: strict-origin-when-cross-origin`, and `X-XSS-Protection: 1; mode=block`.
-  - **Input Validation & Decompression Bomb Protection**: Pillow `MAX_IMAGE_PIXELS = 25,000,000`, dimension bounding ($8192 \times 8192$), upload size capping (25 MB max), structural Pillow verification, and animated format rejection.
-  - **Anti-Zip-Slip Traversal Defense**: Strict path component inspection rejecting `..`, absolute paths, and drive letters during project archive imports.
-  - **Anti-Zip-Bomb Resource Limits**: Enforces bounds on imported archives (`MAX_ARCHIVE_ENTRIES = 250`, `MAX_UNCOMPRESSED_BYTES = 500MB`, `MAX_INDIVIDUAL_ENTRY_BYTES = 100MB`, compression ratio $\le 100\times$).
-- **Interaction, Persistence & Export Subsystem (Phase 09)**:
-  - **Local Project Management**: Project creation, renaming, opening, recent projects discovery, and project-level metadata tracking.
-  - **Atomic Disk Persistence**: All project and scene state writes are buffered to temporary `.tmp` files, flushed, and atomically replaced (`tmp_path.replace(path)`) to guarantee zero file corruption from interrupted saves.
-  - **Asset Manifest Generation**: Computes structured manifest listing all referenced photographs, segmentation masks, depth maps, and GLB meshes with relative storage paths, MIME types, and SHA-256 integrity hashes.
-  - **Scene Interaction & Interactive Transforms**: Real-time manipulation of reconstructed people with Position ($X, Y, Z$ in meters), Rotation ($Y$ yaw in degrees), and Uniform Scale controls in the Contextual Inspector.
-  - **Server-Side Transform Constraints**: Strict validation preventing NaNs, bounding coordinates within $[-50\text{m}, 50\text{m}]$, and asserting positive scales within $[0.05, 10.0]$.
-  - **Reliable Reset Transform**: Restores entity placement back to initial assembled depth-projected coordinates.
-  - **Dirty State Tracking**: Unsaved changes indicator alerts users to workspace edits; auto-clears upon saving.
-  - **Real Local Export Engine**:
-    - **Single Entity Mesh (GLB)**: Validates geometry via `trimesh` and exports binary GLTF with neutral clay PBR material; rejects export of unreconstructed entities honestly.
-    - **Assembled Multi-Person Scene (GLB)**: Exports multi-person 3D scenes preserving spatial coordinates, orientations, and node transforms.
-    - **Canonical Scene Metadata (JSON)**: Exports canonical scene metadata with schema version, entity IDs, transforms, and provenance.
-    - **Portable Project Archive (.zip)**: Packages `project.json`, `scene.json`, `manifest.json`, and all local asset binaries into a self-contained ZIP archive.
-    - **Anti-Zip-Slip Security**: Reimports portable project archives safely with strict path traversal defense, validating relative paths and schema integrity.
-- **Unified Hybrid Renderer Architecture (Phase 08)**:
-  - **Single Scene, Multiple Representations**: One unified rendering pipeline presenting the authoritative scene through 9 distinct representations while preserving entity identity, scene transforms, and user interactions.
-  - **Representation Registry (`packages/scene-schema/src/registry.ts`)**: Central registry declaring metadata, categories, required assets, supported scene types, rendering behaviors, and known limitations for all 9 representations (`original`, `detection`, `segmentation`, `depth`, `spatial_photo`, `wireframe`, `solid3d`, `articulated`, `combined`).
-  - **Unified Asset Cache (`apps/web/lib/asset-cache.ts`)**: Shared in-memory caching of parsed 3D models and textures, eliminating duplicate network fetches and re-parsing across mode switches. Reuses geometry buffers directly across solid, wireframe, articulated, and combined views.
-  - **Single Camera & Navigation Contract (`CameraController.tsx`)**:
-    - **2D Photographic Navigation**: Rotation locked to face image plane frontally, permitting pure 2D pan and zoom without accidental 3D tilting.
-    - **3D Scene Navigation**: Full unconstrained 360-degree orbit, pan, zoom, fit-to-scene, and focus-on-person.
-    - **Restrained Parallax Navigation**: Parallax bounds ($\pm 18^\circ$ azimuth, $75^\circ \text{--} 105^\circ$ polar) for Spatial Photo mode.
-    - **Camera State Preservation**: Switching between 3D representations (`solid3d` $\leftrightarrow$ `wireframe` $\leftrightarrow$ `articulated` $\leftrightarrow$ `combined`) **preserves** the user's active camera position, target, and zoom level.
-    - **Reliable Fit-to-View**: Exact mathematical distance calculation for fitting 2D photos and 3D multi-person meshes without clipping.
-  - **Unified Person Selection & Visibility**: Stable person entity IDs and selected entity state preserved across all representations that support selection. Entity visibility settings (`visible: boolean`) maintained across all views.
-  - **Hybrid Combined Scene Representation**: Unifies 3D assembled human meshes with an upright photographic spatial reference plane ($Z = -0.6\text{m}$, 85% opacity, locked aspect ratio).
-- **DRISHTI Motion Subsystem (Phase 07)**:
-  - **Canonical 24-Joint Kinematic Skeleton**: Formulates a standardized 24-joint human skeleton aligned with SMPL and standard anatomical topology (`pelvis` root, hips, spine, neck, head, shoulders, elbows, wrists, hands, knees, ankles, feet).
-  - **Structural Hierarchy Validation (`validate_skeleton_hierarchy`)**: Automated cycle detection, duplicate joint/index checks, missing parent validation, and non-finite coordinate assertions.
-  - **2D Pose Estimation & Multi-Person IoU Matching**: Integrates local YOLOv8-pose (`data/models/yolov8n-pose.pt`, 6.5MB) with automatic IoU bounding box association and confidence preservation, with offline `MockPoseEstimator` fallback.
-  - **3D Skeleton Fitting (`SkeletonFitter`)**: Regresses genuine 3D joint centers via SMPL joint regressor matrix ($J = J_{regressor} \cdot V_{6890}$) or anatomical bounding box landmarks, aligned at the pelvis origin $(0, 0, 0)$ in local humanoid space.
-  - **Linear Blend Skinning Rigging Engine (`RiggingEngine`)**: Computes vertex skinning weights using SMPL native LBS weights ($6890 \times 24$ matrix) or proximity heat weights, normalized to the top-4 influences per vertex summing to $1.0$ ($L_1 = 1.0$), complying with GPU shader constraints.
-  - **Procedural Animation Engine (`ProceduralAnimationEngine`)**: Synthesizes deterministic procedural animation clips with quaternion rotations: `idle_breathing` (3.0s), `torso_twist` (4.0s), `arm_wave` (2.5s), and `gentle_walk` (2.0s).
-  - **Honest Provenance & Disclaimers**: All procedural clips and UI badges carry explicit `provenance: "procedural"` metadata, communicating clearly that motion is procedurally synthesized and not historical motion recovered from the photograph.
-  - **Three.js Skeleton Overlay (`SkeletonOverlay`)**: Renders 24 joint spheres (root pelvis highlighted in amber `#f59e0b`, limbs in emerald `#10b981`) and 23 bone line segments with X-ray depth testing.
-  - **Interactive Playback Controls**: Independent per-person playback controls including Play/Pause, Reset Pose, playback speed chips (0.5x, 1.0x, 1.5x), and clip dropdown selector.
-- **Multi-Person 3D Scene Assembly Engine (Phase 06)**:
-  - **Deterministic Scene Graph Assembly**: Transforms individually reconstructed human meshes into a unified, coherent 3D spatial scene graph with hierarchical parent-child relationships and typed nodes.
-  - **Model Space vs. Scene Space Separation**: Preserves canonical SMPL geometry (origin at pelvis) and evaluates explicit scene transforms:
-    $$\mathbf{T}_{\text{scene}} = \mathbf{T}_{\text{placement}} \times \mathbf{R}_{\text{orientation}} \times \mathbf{S}_{\text{normalization}}$$
-  - **Horizontal Composition Preservation ($X$)**: Maps bounding box image centers to 3D space, ensuring lateral ordering (Person A left, Person B center, Person C right) is preserved exactly.
-  - **Vertical Ground Plane Contact ($Y$)**: Mathematically grounds characters to the horizontal $Y = 0$ floor plane based on mesh bounding heights.
-  - **Relative Depth Ordering ($Z$)**: Maps canonical monocular depth proximity $P \in [0.0, 1.0]$ into scene depth with calibrated spread factors, placing closer foreground people nearer to the camera ($+Z$) without inventing fake metric units.
-  - **Occlusion Reconciliation**: Detects overlapping 2D boxes ($\text{IoU} > 0.12$) with close proximity ($|\Delta P| < 0.05$) and non-destructively flags `"occlusion_ambiguity"` while maintaining photographic composition.
-  - **Partial Reconstruction Resilience**: Handles incomplete scenes gracefully; subjects without 3D meshes remain registered in the scene graph and are rendered with in-scene wireframe bounding indicators.
-  - **Camera Controls & Viewport Navigation**: "Fit Scene" dynamically calculates the bounding sphere of all visible assembled people and frames the camera; "Focus Person" centers on selected entities; orbit, pan, zoom, and reset controls.
-  - **Interactive Entity Visibility**: Per-entity visibility toggle (`visible: boolean`) interactively hides or shows meshes and bounding volumes in the 3D viewport.
-  - **Complete Local Scene Persistence**: Assembled scenes, entities, scene graphs, and assembly reports are saved and recovered from `data/storage/scenes/{scene_id}.json` with atomic temporary writes.
-- **Genuine 3D Human Mesh Reconstruction (Phase 05)**:
-  - **Local Model Architecture**: Integrates SPIN (SMPL Optimization in the Loop of Neural Networks, Kolotouros et al., ICCV 2019) with a ResNet-50 feature extractor and a 3-iteration iterative 6D rotation & shape parameter regressor.
-  - **Pure PyTorch SMPL Linear Blend Skinning (LBS)**: Eliminates legacy C++ and `chumpy` dependencies, evaluating canonical template deformation, PCA shape blend shapes ($\beta$), and joint kinematic rotations in pure PyTorch on Apple Silicon `mps` or CUDA.
-  - **Standardized Anatomical Topology**: Reconstructs real volumetric humanoid meshes consisting of $6,890$ vertices and $13,776$ triangular faces.
-  - **Geometry Validation & Sanitization**: Comprehensive validation rejecting NaNs, infinities, and out-of-range indices; removes degenerate zero-area faces; computes smooth vertex normals; and verifies real-world bounding dimensions ($[0.2\text{m}, 2.6\text{m}]$).
-  - **Standard Binary GLTF (.glb) Export**: Writes binary GLTF models to local disk (`data/storage/meshes/{scene_id}_{entity_id}.glb`) with neutral studio clay PBR material (`#d0d0d8`, roughness 0.65).
-  - **Dual Viewport Visualizations**:
-    - **Wireframe Mode**: Displays genuine reconstructed polygon edge topology in technical cyan/white lines.
-    - **Solid 3D Mode**: Renders smooth studio clay meshes under ambient and directional lighting with raycast selection highlighting.
-  - **Multi-Person & Fault Tolerance**: Robust per-person bounding crop extraction with 15% context padding and aspect-ratio letterboxing. Partial failure isolation guarantees that failure to reconstruct one subject never aborts other subjects.
-  - **Entity Inspector Integration**: Displays 3D Mesh Status (`Ready`), Vertex Count ($6,890$), Face Count ($13,776$), Dimensions ($W \times H \times D$ in meters), Model Provenance (`SPIN + SMPL LBS (Pretrained)`), Texture Status (`Geometry Only - Neutral Studio Clay`), and 3D Scene Placement (`position`, `depth source`, `visibility`, `uncertainty flags`).
-- **Progressive Visual Reveal Pipeline**:
-  - **Instant Photo Display**: Original image renders on the Three.js viewport immediately upon upload and server validation.
-  - **Live Detection Boxes**: 3D bounding boxes render the moment person detection completes with stable entity IDs (`person-001`, `person-002`, ...).
-  - **Individual Mask Streaming**: Segmentation masks stream and attach progressively to each person entity as they are written to disk.
-  - **Dynamic Depth Map Activation**: 8-bit normalized grayscale depth visualization unlocks the moment relative proximity computation completes.
-  - **Dynamic Spatial Photo Activation**: Interactive 3D vertex-displaced mesh surface unlocks seamlessly once depth and photographic textures are available.
-  - **Reconstructed Human Meshes**: Wireframe and Solid 3D representations unlock progressively as human mesh GLB assets become ready.
-  - **Multi-Person Scene Assembly**: Unifies all reconstructed meshes and indicators into an explorable 3D scene.
-- **Server-Sent Events (SSE) Push Architecture**: Real-time streaming (`GET /api/v1/jobs/{job_id}/stream`) with bounded 500-event FIFO buffer and automatic HTTP polling fallback for maximum reliability.
-- **Idempotent Frontend Event Reducer (`reduceProcessingEvent`)**: Pure state machine guaranteeing deterministic scene assembly from events, preserving camera positions, entity selections, and viewport modes across reconnections.
-- **Dynamic Representation Availability (`computeRepresentationAvailability`)**: Evaluates readiness across all 7 representations (`photo`, `detection`, `segmentation`, `depth`, `spatial_photo`, `wireframe`, `solid_3d`), displaying live status badges (`LIVE`, `ERR`).
-- **Live Pipeline Inspector**: Interactive panel reflecting real-time stage states including `scene_assembly`, entity segmentation/reconstruction progress counters, and partial failure alerts.
-- **Cooperative Job Cancellation**: Clean cancellation via `POST /api/v1/jobs/{job_id}/cancel` and UI "Cancel Analysis" button, halting backend worker loops at cooperative checkpoints while retaining completed intermediate assets.
-- **Non-Fatal Partial Failure Isolation**: Gracefully catches and isolates non-fatal stage errors (e.g. depth failure, single-person crop failure) while preserving and displaying successful upstream and sibling results.
-- **Monocular Depth Estimation**: Local Depth Anything V2 Small neural network producing dense relative depth fields $[0.0, 1.0]$ with robust 2nd/98th percentile normalization.
-- **Interactive 3D Spatial Photography**: High-resolution $128 \times 128$ vertex displacement mesh with bounded parallax orbit controls (azimuth $\pm 18^\circ$, polar $75^\circ \text{--} 105^\circ$, damping $0.06$).
-- **Local Asset Storage**: Lossless float32 machine-readable `.npy` depth maps, grayscale visualization PNGs, 8-bit binary instance masks, binary GLTF meshes (`.glb`), sanitized photos, and scene JSON definitions stored safely in `data/storage/`.
-- **Automated Verification**: **138 automated tests passing** across 5 test suites (backend pytest, frontend vitest, schema vitest, and Playwright E2E).
+The application runs entirely on local hardware, communicates over loopback network interfaces, and requires no external cloud vision APIs.
 
 ---
 
-## Project Structure
+## Architecture and Subsystems
+
+DRISHTI is structured as a monorepo consisting of a FastAPI backend service, a Next.js 15 web client, and shared TypeScript schema packages.
 
 ```
 DRISHTI/
-│
 ├── apps/
 │   └── web/                   # Next.js 15, React 19, Three.js, React Three Fiber, Zustand
-│       ├── app/               # App Router pages and layout
-│       ├── components/        # Viewport, controls, scene elements, contextual panel
-│       │   ├── controls/      # RepresentationSelector, ProcessingIndicator, UploadButton
-│       │   ├── layout/        # TopBar, ContextualPanel (with Live Pipeline & Entity Inspector)
-│       │   ├── scene/         # PhotoPlane, DetectionBox (3D), SegmentationMaskLayer, HumanMeshLayer (3D GLTF)
-│       │   └── viewport/      # ThreeViewport, GridFloor, ErrorBoundary
-│       ├── hooks/             # Custom hooks (health monitoring, viewport resize)
-│       ├── lib/               # API client (SSE + polling fallback) and image utilities
-│       ├── stores/            # Zustand scene store and idempotent event-reducer
-│       └── tests/             # Vitest frontend unit, reducer, inspector, 3D mesh, and visualization tests
-│
 ├── services/
-│   └── api/                   # Python 3.11, FastAPI, PyTorch, Ultralytics, Trimesh, Pydantic
-│       ├── app/
-│       │   ├── api/           # Health, version, assets (photos, masks, depth, meshes), scenes, events, pipeline routes
-│       │   ├── core/          # Validated config, structured logging, custom errors
-│       │   ├── schemas/       # Scene, event, asset, detection, segmentation, and reconstruction schemas
-│       │   ├── scene/         # Scene manager and state validation
-│       │   ├── assets/        # Storage manager (register_photo, register_mask, register_depth, register_mesh)
-│       │   ├── pipeline/      # DeviceManager, ModelRegistry, YoloDetector, YoloSegmentor, DepthEstimator, Reconstructor, Coordinator
-│       │   └── events/        # Sequenced event emitter, bounded FIFO buffer, pub/sub SSE stream
-│       └── tests/             # Pytest backend test suite (unit, geometry, mock pipeline, real MPS smoke, progressive events)
-│
+│   └── api/                   # Python 3.11, FastAPI, PyTorch, Ultralytics, Trimesh
 ├── packages/
-│   ├── scene-schema/          # TypeScript scene models, representation availability, coordinate conventions
-│   └── shared-types/          # TypeScript processing event contracts and API DTOs
-│
+│   ├── scene-schema/          # Canonical scene schema and representation registry
+│   └── shared-types/          # Shared TypeScript DTOs and event models
 ├── data/
 │   ├── models/                # Local neural network checkpoints
-│   │   ├── yolov8n-seg.pt     # YOLOv8 nano instance segmentation
-│   │   ├── depth-anything-v2-small/ # Depth Anything V2 Small Safetensors
-│   │   └── human_reconstruction/    # SPIN checkpoint (.pth.tar) + SMPL Neutral model (.npz)
-│   └── storage/               # Local user photos, segmentation masks, depth maps, and meshes (.glb)
-│
-├── docs/                      # ARCHITECTURE, INSTALLATION, MODEL_SETUP, SECURITY, TESTING, RELEASE_NOTES, TROUBLESHOOTING, ROADMAP
-├── scripts/                   # dev.sh, test.sh, test_backend.sh, setup.sh, run_api.sh
-└── tests/                     # Playwright browser-level E2E tests
+│   └── storage/               # Local SQLite/JSON persistence and asset storage
+├── docs/                      # Architectural specifications and design records
+└── scripts/                   # Local setup, run, and test scripts
 ```
 
+### Pipeline Flow
+
+1. **Ingestion and Image Validation**: Validates image format (JPEG, PNG, WebP), dimensions, and metadata. Enforces limits to protect against decompression bombs. Maps the source photograph to a 3D image plane in metric space.
+2. **Person Detection (YOLOv8m)**: Detects human candidates, generates 2D bounding boxes in normalized image coordinates, filters non-person classes, and assigns stable entity identifiers.
+3. **Instance Segmentation (YOLOv8m-seg)**: Generates 8-bit binary silhouette masks for each detected person. Calculates pixel area coverage and boundaries.
+4. **Scene Depth Estimation (Depth Anything V2 Small)**: Computes a dense relative depth field across the full image. Disparity maps are normalized using percentile boundaries (2nd to 98th) to eliminate outlier artifacts. Outputs machine-readable 32-bit floating point arrays and visualization textures.
+5. **Spatial Photo Relief**: Projects the photograph onto a 128x128 vertex grid displaced along the Z axis by the estimated depth map.
+6. **Human Mesh Recovery (HMR 2.0 / 4DHumans)**: Extracts cropped and letterboxed image patches for each person. A Vision Transformer (ViT) predicts 3D human pose, joint rotations (6D continuous representations), shape parameters (SMPL beta coefficients), and weak perspective camera parameters.
+7. **SMPL Forward Kinematics (PyTorch LBS)**: Evaluates canonical SMPL linear blend skinning entirely in PyTorch to produce articulated humanoid meshes with 6,890 vertices and 13,776 faces. No external C++ or legacy dependencies are required.
+8. **Surface Appearance & Projective Colors**: Samples RGB colors from the source photograph and maps them onto visible front-facing mesh vertices. Non-visible or obscured vertices receive neutral studio clay shading.
+9. **2D/3D Skeleton Fitting**: Derives a canonical 24-joint human skeleton from SMPL joint regression matrices. Normalizes bone skinning weights to the top four influences per vertex ($L_1 = 1.0$) for hardware shader compatibility.
+10. **Multi-Person Spatial Scene Assembly**: Grounds each character to the horizontal floor plane ($Y = 0$), preserves lateral photographic ordering on the X axis, and stages subjects along the Z axis based on relative depth measurements. Overlapping subjects are evaluated for occlusion boundaries.
+11. **Procedural Motion Subsystem**: Evaluates character posture (standing vs. seated) and binds stance-appropriate skeletal animation tracks (e.g., seated idle breathing with locked hip/knee flexion, or standing idle cycles). All synthesized movement is explicitly flagged with procedural provenance.
+
 ---
 
-## Documentation Suite
+## User Experience and Viewport Controls
 
-- [**System Architecture**](file:///Users/satish/Desktop/DRISHTI/docs/ARCHITECTURE.md): Multi-stage pipeline, monorepo design, scene graph, and state flow.
-- [**Installation & Setup**](file:///Users/satish/Desktop/DRISHTI/docs/INSTALLATION.md): Prerequisites, automated and manual setup guides for macOS, Linux, and Windows WSL2.
-- [**Model Setup & Licenses**](file:///Users/satish/Desktop/DRISHTI/docs/MODEL_SETUP.md): Weight locations, architectures, license table, and hardware acceleration guide.
-- [**Security & Privacy**](file:///Users/satish/Desktop/DRISHTI/docs/SECURITY.md): Local privacy boundary, Anti-Zip-Slip, decompression bomb defenses, and loopback enforcement.
-- [**Testing & QA**](file:///Users/satish/Desktop/DRISHTI/docs/TESTING.md): Testing philosophy, test suite breakdowns, and execution guide for all 182 tests.
-- [**v1.0.0 Release Notes**](file:///Users/satish/Desktop/DRISHTI/docs/RELEASE_NOTES.md): Complete changelog, metrics, and deliverable review across all 10 phases.
-- [**Troubleshooting**](file:///Users/satish/Desktop/DRISHTI/docs/TROUBLESHOOTING.md): Common diagnostics, port conflict resolutions, and device issue remedies.
-- [**Engineering Roadmap**](file:///Users/satish/Desktop/DRISHTI/docs/ROADMAP.md): Complete 10-phase milestone tracking.
+### Reconstruction Trigger
+
+Reconstruction is opt-in. When an image is uploaded or dropped into the viewport:
+- The photograph is displayed cleanly on the 3D photo plane in original mode.
+- The camera remains stationary.
+- No automated transformations or perspective shifts occur until the user clicks **Reconstruct Scene** in the top toolbar.
+- Once completed, the button allows replaying the sequence without re-running backend model inference.
+
+### Choreographed Transformation Sequence
+
+When **Reconstruct Scene** is clicked, the viewport executes a nine-stage sequence synchronized with real processing events:
+
+- **Stage 1 (Photograph Introduction)**: Subdued push-in framing the source photograph.
+- **Stage 2 (Person Detection)**: Sequential focus on detected candidates, highlighting bounding boxes and temporary identification tags with actual confidence scores.
+- **Stage 3 (Segmentation)**: Silhouette contour reveal per person using the neural segmentation masks.
+- **Stage 4 (Depth Map)**: Horizontal sweep across the photograph revealing Depth Anything V2's disparity field.
+- **Stage 5 (Spatial Photo)**: Controlled 18-degree perspective tilt revealing 3D depth displacement.
+- **Stage 6 (Individual Wireframe Extraction)**: Each person is focused sequentially. Their reconstructed 3D mesh lifts forward ($Z: 0 \to 0.65\text{m}$) from the photo plane with genuine 6,890-vertex SMPL topology visible.
+- **Stage 7 (3D Solid Mesh)**: Wireframe edges dissolve into solid volumetric surfaces with photograph-projected vertex colors.
+- **Stage 8 (Articulation & Rigging)**: Illuminates the 24 internal joints and 23 bones inside translucent humanoid bodies.
+- **Stage 9 (Final Combined Scene)**: Characters step forward into their room depth positions in front of the reference photograph, handing control directly over to OrbitControls.
+
+### Manual Inspection Modes
+
+Users can toggle between representation modes at any time using the mode selector in the top bar:
+- **Original**: Flat photograph plane.
+- **Detection**: 2D bounding boxes and confidence tags.
+- **Segmentation**: Color-coded instance mask overlays.
+- **Depth Map**: Normalized grayscale depth field.
+- **Spatial Photo**: Interactive depth relief mesh with bounded parallax controls.
+- **Wireframe**: Reconstructed SMPL polygon edge topology.
+- **3D Solid**: Matte studio clay or projective vertex-colored volumetric meshes.
+- **Articulated**: Character meshes with internal joint and bone visualization.
+- **Combined**: Assembled 3D human meshes positioned in front of the photographic reference plane.
+
+### Contextual Inspector
+
+The panel on the right provides:
+- Live pipeline stage status and duration metrics.
+- Active entity metadata (bounding box coordinates, 3D dimensions, vertex/face count, posture description, reprojection error).
+- Transform adjustment tools: Position ($X, Y, Z$ in meters), Rotation ($Y$ yaw), and Scale.
+- Procedural animation controls: Play, Pause, Reset Pose, playback speed selectors (0.5x, 1.0x, 1.5x, 2.0x), and clip selector.
+- Export actions for individual meshes (GLB), assembled scenes (GLB), metadata (JSON), and complete portable project archives (ZIP).
 
 ---
 
-## Quick Start
+## Hardware Acceleration
 
-### 1. Initial Setup
+The backend automatically detects and leverages available hardware:
+
+- **Apple Silicon (macOS)**: Uses Metal Performance Shaders (`mps`). Model inference, SMPL blend skinning, and depth estimation execute directly on Apple unified memory.
+- **NVIDIA GPU (Linux / Windows WSL2)**: Uses CUDA acceleration (`cuda:0`).
+- **CPU Fallback**: Vectorized multi-threaded PyTorch fallback if no GPU acceleration is present.
+
+---
+
+## Prerequisites
+
+Ensure the following tools are installed on your host system:
+
+- **Python**: Version 3.11 (Python 3.12 or newer is not supported by several computer vision dependencies).
+- **Node.js**: Version 18.18 or newer (Node 20 or Node 22 LTS recommended).
+- **Package Manager**: `pnpm` (version 9+) or `npm` (version 10+).
+- **Git**: Version 2.30+.
+- **uv** (Optional but recommended): High-speed Python package and environment manager.
+
+---
+
+## Installation
+
+### 1. Clone the Repository
+
 ```bash
-bash scripts/setup.sh
+git clone https://github.com/Satishhhh989/DRISHTI.git
+cd DRISHTI
 ```
 
-### 2. Start Application
+### 2. Backend Environment Setup
+
+Create a Python 3.11 virtual environment and install the required dependencies:
+
+Using standard virtual environment:
+```bash
+python3.11 -m venv .venv
+source .venv/bin/activate
+pip install --upgrade pip
+pip install -r services/api/requirements.txt
+```
+
+Or using `uv`:
+```bash
+uv venv --python 3.11 .venv
+source .venv/bin/activate
+uv pip install -r services/api/requirements.txt
+```
+
+### 3. Frontend & Shared Packages Setup
+
+Install workspace dependencies and build the shared packages:
+
+```bash
+pnpm install
+pnpm --filter @photo-to-3d/scene-schema build
+pnpm --filter @photo-to-3d/shared-types build
+```
+
+If using standard `npm`:
+```bash
+npm install
+npm --prefix packages/scene-schema run build
+npm --prefix packages/shared-types run build
+```
+
+### 4. Storage Directory Initialization
+
+Ensure local asset storage directories exist:
+
+```bash
+mkdir -p data/storage/{photos,masks,depth,meshes,textures,skeletons,exports,scenes}
+```
+
+### 5. Check Model Checkpoints
+
+Verify that pretrained model checkpoints are present in `data/models/`:
+
+- `data/models/yolov8m-seg.pt` (YOLOv8 instance segmentation)
+- `data/models/yolov8m-pose.pt` (YOLOv8 2D pose estimation)
+- `data/models/depth-anything-v2-small/model.safetensors` (Depth Anything V2 Small)
+- `data/models/hmr2/epoch=35-step=1000000.ckpt` (HMR 2.0 4DHumans checkpoint)
+- `data/models/human_reconstruction/SMPL_N_model.npz` (SMPL Neutral body model)
+
+---
+
+## Running Locally
+
+### Option A: Automated Launch Script
+
+The root workspace includes a runner script that starts both the backend API and frontend dev server simultaneously:
+
 ```bash
 bash scripts/dev.sh
 ```
-- Web Application: [http://localhost:3000](http://localhost:3000)
-- Backend API: [http://127.0.0.1:8000](http://127.0.0.1:8000)
-- API Documentation: [http://127.0.0.1:8000/docs](http://127.0.0.1:8000/docs)
 
-### 3. Run Automated Tests
+Press `Ctrl+C` to terminate both services cleanly.
+
+### Option B: Manual Service Startup
+
+To run the services independently in separate terminal windows:
+
+#### Terminal 1: Backend API Service
+
 ```bash
-# Complete test suite across all packages (182 tests)
-bash scripts/test.sh
-
-# Individual suites:
-bash scripts/test_backend.sh                 # Backend pytest suite (112 tests)
-pnpm --filter @photo-to-3d/web test          # Frontend vitest suite (37 tests)
-pnpm --filter @photo-to-3d/scene-schema test # Scene schema tests (18 tests)
-pnpm --filter @photo-to-3d/shared-types test # Shared type tests (2 tests)
-pnpm test:e2e                                # Playwright E2E browser tests (13 tests)
+cd /path/to/DRISHTI
+source .venv/bin/activate
+export PYTHONPATH="services/api"
+uvicorn app.main:app --host 127.0.0.1 --port 8000 --reload
 ```
+
+The API service will start on `http://127.0.0.1:8000`.
+- API Health Check: `http://127.0.0.1:8000/api/v1/health`
+- OpenAPI Documentation: `http://127.0.0.1:8000/docs`
+
+#### Terminal 2: Frontend Web Application
+
+```bash
+cd /path/to/DRISHTI
+pnpm --filter @photo-to-3d/web dev
+# or: npm --prefix apps/web run dev
+```
+
+The web application will compile and launch on `http://localhost:3000`.
 
 ---
 
-## Engineering Rules
+## Testing and Verification
 
-1. **No Cloud Vision APIs**: All neural inference runs locally on the host hardware.
-2. **Local Pretrained Models Only**: Lightweight, high-performance YOLOv8 nano segmentation (~7.1MB), YOLOv8 nano pose (~6.8MB), Depth Anything V2 Small (~95MB), and SPIN + SMPL Neutral (~187MB), explicitly managed in `data/models/`.
-3. **No Fake AI or Synthetic Meshes**: Detection boxes, masks, confidence scores, depth maps, 3D polygon meshes, and 24-joint skeletons reflect actual model inference outputs. Procedural animations carry explicit provenance labels.
-4. **Progressive Visibility**: Reveal intermediate assets as they are computed; never block the UI behind a monolithic opaque spinner.
-5. **Strict Coordinate System**: Right-handed Cartesian coordinates ($+X$ Right, $+Y$ Up, $+Z$ Forward, metric units).
-6. **Security & Privacy**: Enforced loopback binding (`127.0.0.1`), safe asset path sanitization preventing directory traversal, Anti-Zip-Slip archive verification, and strict decompression bomb protection.
+The repository maintains an automated test suite across backend and frontend codebases.
+
+### Run Backend Pytest Suite
+
+```bash
+bash scripts/test_backend.sh
+```
+Or directly via pytest:
+```bash
+source .venv/bin/activate
+PYTHONPATH="services/api" pytest services/api/tests -v
+```
+
+This verifies 146 tests covering:
+- Image validation and anti-decompression bomb protection.
+- Monocular depth normalization and percentile scaling.
+- SMPL 6D rotation conversions and kinematic skeleton validation.
+- HMR 2.0 neural inference and pose fidelity.
+- Multi-person scene assembly, ground alignment, and occlusion handling.
+- Asset storage, atomic writes, and anti-path-traversal defenses.
+
+### Run Frontend Vitest Suite
+
+```bash
+npm --prefix apps/web test -- --run
+# or: pnpm --filter @photo-to-3d/web test -- --run
+```
+
+This verifies 44 tests covering:
+- Complete removal of the bottom timeline panel from the viewport.
+- TopBar "Reconstruct Scene" execution and replay handling.
+- Individual wireframe extraction state and progressive lift logic.
+- Idempotent SSE event reduction into client scene state.
+- Depth inspection and procedural animation playback controls.
+
+---
+
+## Security and Privacy Protections
+
+- **Strict Loopback Binding**: The FastAPI backend explicitly binds to `127.0.0.1` and will not bind to external interfaces (`0.0.0.0`) by default.
+- **Restricted CORS**: Cross-origin requests are limited strictly to local development origins (`http://localhost:3000`, `http://127.0.0.1:3000`).
+- **Decompression Bomb Protection**: Pillow's `MAX_IMAGE_PIXELS` is capped at 25,000,000, and uploads exceeding 25 MB or 8192x8192 pixels are rejected.
+- **Anti-Zip-Slip Traversal Prevention**: Project archive imports strictly inspect file paths, rejecting any archive member with directory traversal sequences (`..`), leading slashes, or drive letters.
+- **Atomic Persistence**: Scene and project files are written to isolated `.tmp` files and committed via atomic renames to prevent partial-write corruption during unexpected shutdowns.
+- **No External Telemetry**: The application transmits zero data outside your local machine.
+
+---
+
+## API Reference Overview
+
+| Method | Endpoint | Description |
+| :--- | :--- | :--- |
+| `GET` | `/api/v1/health` | Service status, version, and storage availability. |
+| `GET` | `/api/v1/pipeline/hardware` | Hardware discovery (device type, memory, acceleration status). |
+| `POST` | `/api/v1/photos/upload` | Upload and sanitize a photograph; registers a new scene. |
+| `POST` | `/api/v1/pipeline/analyze` | Initiates asynchronous multi-stage reconstruction job. |
+| `GET` | `/api/v1/jobs/{job_id}/stream` | Server-Sent Events (SSE) push stream for job progress. |
+| `POST` | `/api/v1/jobs/{job_id}/cancel` | Cooperatively cancels an active analysis job. |
+| `GET` | `/api/v1/scenes` | Lists all locally persisted scenes. |
+| `GET` | `/api/v1/scenes/{scene_id}` | Retrieves full canonical scene JSON with entity graph. |
+| `PATCH`| `/api/v1/scenes/{scene_id}/entities/{entity_id}` | Updates entity transforms, visibility, or animation settings. |
+| `GET` | `/api/v1/export/scene/{scene_id}/glb` | Exports the assembled 3D scene as a binary GLB file. |
+| `GET` | `/api/v1/export/project/{project_id}/archive`| Exports the complete project and binary assets as a ZIP archive. |
