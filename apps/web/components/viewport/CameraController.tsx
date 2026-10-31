@@ -5,6 +5,7 @@ import { useThree } from "@react-three/fiber";
 import { OrbitControls } from "@react-three/drei";
 import { useUIStore } from "@/stores/ui-store";
 import { useSceneStore } from "@/stores/scene-store";
+import { useCinematicStore } from "@/stores/cinematic-store";
 import { is2DRepresentation, is3DRepresentation, VisualizationMode } from "@photo-to-3d/scene-schema";
 
 const DEFAULT_CAMERA_POS: [number, number, number] = [0, 1.0, 3.2];
@@ -157,9 +158,12 @@ export const CameraController: React.FC = () => {
     controlsRef.current.update();
   }, [focusEntityTrigger, selectedEntityId, currentScene, camera]);
 
+  const isCinematicActive = useCinematicStore((state) => state.isCinematicActive);
+
   return (
     <OrbitControls
       ref={controlsRef}
+      enabled={!isCinematicActive}
       enableDamping
       dampingFactor={0.06}
       target={DEFAULT_TARGET_POS}

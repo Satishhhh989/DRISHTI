@@ -4,6 +4,7 @@ import React, { useRef } from "react";
 import { apiClient } from "@/lib/api-client";
 import { getImageDimensions } from "@/lib/image-utils";
 import { useSceneStore } from "@/stores/scene-store";
+import { useCinematicStore } from "@/stores/cinematic-store";
 import { useUIStore } from "@/stores/ui-store";
 import styles from "./UploadButton.module.css";
 
@@ -43,6 +44,7 @@ export const UploadButton: React.FC<UploadButtonProps> = ({
       const dims = await getImageDimensions(file);
       const localUrl = URL.createObjectURL(file);
       setLocalPhoto(localUrl, dims.width, dims.height, file.name);
+      useCinematicStore.getState().startCinematic();
 
       // 2. Persist to local backend if available
       try {
@@ -79,6 +81,7 @@ export const UploadButton: React.FC<UploadButtonProps> = ({
                   try {
                     const refreshed = await apiClient.getScene(targetSceneId);
                     reconcileAuthoritativeScene(refreshed);
+                    useCinematicStore.getState().updateStageStatus("stage_combined", "completed", { progress: 1.0 });
                     setStatusNotice(
                       refreshed.entities.length > 0
                         ? `Analysis complete: ${refreshed.entities.length} people identified.`

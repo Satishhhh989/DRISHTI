@@ -8,8 +8,11 @@ import { ViewportErrorBoundary } from "./ViewportErrorBoundary";
 import { PhotoPlane } from "@/components/scene/PhotoPlane";
 import { HumanMeshLayer, Unified3DMode } from "@/components/scene/HumanMeshLayer";
 import { LiveReconstructionController } from "@/components/scene/LiveReconstructionController";
+import { CinematicSceneDirector } from "@/components/scene/CinematicSceneDirector";
+import { ReconstructionTimeline } from "@/components/timeline/ReconstructionTimeline";
 import { UploadButton } from "@/components/controls/UploadButton";
 import { useSceneStore } from "@/stores/scene-store";
+import { useCinematicStore } from "@/stores/cinematic-store";
 import { useUIStore } from "@/stores/ui-store";
 import { getImageDimensions } from "@/lib/image-utils";
 import { apiClient } from "@/lib/api-client";
@@ -25,6 +28,8 @@ export const ThreeViewport: React.FC = () => {
   const activeRepresentation = useSceneStore((state) => state.activeRepresentation);
   const currentScene = useSceneStore((state) => state.currentScene);
   const isAnalyzing = useSceneStore((state) => state.isAnalyzing);
+  const isCinematicActive = useCinematicStore((state) => state.isCinematicActive);
+  const currentStageId = useCinematicStore((state) => state.currentStageId);
   const setLocalPhoto = useSceneStore((state) => state.setLocalPhoto);
   const setScene = useSceneStore((state) => state.setScene);
   const setIsUploading = useSceneStore((state) => state.setIsUploading);
@@ -64,6 +69,7 @@ export const ThreeViewport: React.FC = () => {
         const dims = await getImageDimensions(file);
         const url = URL.createObjectURL(file);
         setLocalPhoto(url, dims.width, dims.height, file.name);
+        useCinematicStore.getState().startCinematic();
 
         try {
           const res = await apiClient.uploadPhoto(file);
@@ -96,12 +102,20 @@ export const ThreeViewport: React.FC = () => {
     return <div className={styles.viewportContainer} />;
   }
 
+  const isCinematic3DStage =
+    isCinematicActive &&
+    (currentStageId === "stage_wireframe" ||
+      currentStageId === "stage_solid3d" ||
+      currentStageId === "stage_articulation" ||
+      currentStageId === "stage_combined");
+
   const is3DMode =
     activeRepresentation === "wireframe" ||
     activeRepresentation === "solid3d" ||
     activeRepresentation === "articulated" ||
     activeRepresentation === "combined" ||
-    (isAnalyzing && hasReconstructedMeshes);
+    (isAnalyzing && hasReconstructedMeshes) ||
+    isCinematic3DStage;
 
   return (
     <div
@@ -181,6 +195,7 @@ export const ThreeViewport: React.FC = () => {
 
               {/* 0. Real-time Live Reconstruction Presentation Controller */}
               <LiveReconstructionController onAssemblyProgress={setAssemblyProgress} />
+              <CinematicSceneDirector />
 
               {/* 1. Photographic plane rendered in 3D coordinate space (Photo / Inspection Modes) */}
               {(activeRepresentation === "photo" || (isAnalyzing && !hasReconstructedMeshes)) && photoDimensions && (
@@ -218,6 +233,9 @@ export const ThreeViewport: React.FC = () => {
               {/* Camera navigation */}
               <CameraController />
             </Canvas>
+
+            {/* Cinematic Reconstruction Sequence Timeline */}
+            <ReconstructionTimeline />
           </div>
         </ViewportErrorBoundary>
       )}

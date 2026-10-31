@@ -5,6 +5,7 @@ import * as THREE from "three";
 import { useFrame } from "@react-three/fiber";
 import { SceneEntity, SkeletonData } from "@photo-to-3d/scene-schema";
 import { useSceneStore } from "@/stores/scene-store";
+import { useCinematicStore } from "@/stores/cinematic-store";
 import { useUIStore } from "@/stores/ui-store";
 import { assetCache } from "@/lib/asset-cache";
 
@@ -274,8 +275,19 @@ const SingleHumanMesh: React.FC<HumanMeshProps> = ({
   const originalPositionsRef = useRef<Float32Array | null>(null);
 
   const photoDimensions = useSceneStore((state) => state.photoDimensions);
-  const isWireframe = mode === "wireframe";
-  const isArticulated = mode === "articulated";
+  const isCinematicActive = useCinematicStore((state) => state.isCinematicActive);
+  const currentStageId = useCinematicStore((state) => state.currentStageId);
+  const wireframeLiftProgress = useCinematicStore((state) => state.wireframeLiftProgress);
+  const surfaceDissolveProgress = useCinematicStore((state) => state.surfaceDissolveProgress);
+
+  const isEffectiveWireframe =
+    mode === "wireframe" ||
+    (isCinematicActive &&
+      (currentStageId === "stage_wireframe" ||
+        (currentStageId === "stage_solid3d" && surfaceDissolveProgress < 0.85)));
+
+  const isWireframe = isEffectiveWireframe;
+  const isArticulated = mode === "articulated" || (isCinematicActive && currentStageId === "stage_articulation");
 
   const rawMeshUrl = entity.reconstruction?.meshUrl;
   const meshUrl = useMemo(() => {
@@ -363,28 +375,54 @@ const SingleHumanMesh: React.FC<HumanMeshProps> = ({
       : [1, 1, 1];
   }, [rawScale]);
 
-  // Visual presentation position: during scene assembly, smoothly steps forward from photo plane
+  // Visual presentation position: handles Stage 6 (Wireframe Lift) and Stage 9 (Assembly Step-Forward)
   const visualPosition: [number, number, number] = useMemo(() => {
     const box = entity.boundingBox || entity.detection?.boundingBox;
+    const planeH = 2.0;
+    const planeW = planeH * (photoDimensions?.aspect ?? 1.5);
+    const photoX = box ? ((box.xMin + box.xMax) / 2 - 0.5) * planeW : basePosition[0];
+    const photoY = box ? planeH / 2 + (0.5 - (box.yMin + box.yMax) / 2) * planeH : basePosition[1];
+
+    // Stage 6: Wireframe Extraction (Smoothly lifts away from photograph)
+    if (isCinematicActive && currentStageId === "stage_wireframe") {
+      const liftZ = THREE.MathUtils.smoothstep(wireframeLiftProgress, 0.0, 1.0) * 0.65;
+      return [photoX, photoY, liftZ];
+    }
+
+    // Stage 7: 3D Solid Mesh (Hovering in front of photo during progressive surface shading)
+    if (isCinematicActive && currentStageId === "stage_solid3d") {
+      return [photoX, photoY, 0.65];
+    }
+
+    // Stage 8: Articulation & Rigging (Hovering during skeleton illumination)
+    if (isCinematicActive && currentStageId === "stage_articulation") {
+      return [photoX, photoY, 0.65];
+    }
+
+    // Stage 9: Assembly Step-Forward into depth staging
     if (
-      presentationProgress !== undefined &&
-      presentationProgress < 1.0 &&
-      box &&
-      photoDimensions
+      (presentationProgress !== undefined && presentationProgress < 1.0) ||
+      (isCinematicActive && currentStageId === "stage_combined")
     ) {
-      const planeH = 2.0;
-      const planeW = planeH * photoDimensions.aspect;
-      const photoX = ((box.xMin + box.xMax) / 2 - 0.5) * planeW;
-      const photoY = planeH / 2 + (0.5 - (box.yMin + box.yMax) / 2) * planeH;
-      const t = THREE.MathUtils.smoothstep(presentationProgress, 0.0, 1.0);
+      const t = THREE.MathUtils.smoothstep(presentationProgress ?? 1.0, 0.0, 1.0);
       return [
         photoX + (basePosition[0] - photoX) * t,
         photoY + (basePosition[1] - photoY) * t,
         0.0 + (basePosition[2] - 0.0) * t,
       ];
     }
+
     return basePosition;
-  }, [basePosition, presentationProgress, entity.boundingBox, entity.detection, photoDimensions]);
+  }, [
+    basePosition,
+    presentationProgress,
+    entity.boundingBox,
+    entity.detection,
+    photoDimensions,
+    isCinematicActive,
+    currentStageId,
+    wireframeLiftProgress,
+  ]);
 
   // Procedural articulation & skeletal deformation loop
   useFrame((_, delta) => {

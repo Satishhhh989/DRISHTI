@@ -3,6 +3,7 @@
 import React, { useEffect, useState } from "react";
 import * as THREE from "three";
 import { useSceneStore } from "@/stores/scene-store";
+import { useCinematicStore } from "@/stores/cinematic-store";
 import { assetCache } from "@/lib/asset-cache";
 import { DetectionBox } from "./DetectionBox";
 import { SegmentationMaskLayer } from "./SegmentationMaskLayer";
@@ -35,6 +36,10 @@ export const PhotoPlane: React.FC<PhotoPlaneProps> = ({
   const visualizationMode = useSceneStore((state) => state.visualizationMode);
   const depthStrength = useSceneStore((state) => state.depthStrength);
   const depthVisualizationUrl = useSceneStore((state) => state.depthVisualizationUrl);
+
+  const isCinematicActive = useCinematicStore((state) => state.isCinematicActive);
+  const currentStageId = useCinematicStore((state) => state.currentStageId);
+  const depthWipeProgress = useCinematicStore((state) => state.depthWipeProgress);
 
   // 1. Load original photo texture via unified assetCache
   useEffect(() => {
@@ -114,7 +119,9 @@ export const PhotoPlane: React.FC<PhotoPlaneProps> = ({
             <planeGeometry args={[width, height]} />
             <meshBasicMaterial
               map={
-                !isReferencePlane && visualizationMode === "depth" && depthVisTexture
+                !isReferencePlane &&
+                (visualizationMode === "depth" || (isCinematicActive && currentStageId === "stage_depth" && depthWipeProgress >= 1.0)) &&
+                depthVisTexture
                   ? depthVisTexture
                   : photoTexture
               }
@@ -125,6 +132,33 @@ export const PhotoPlane: React.FC<PhotoPlaneProps> = ({
             />
           </mesh>
 
+          {/* Depth Wipe Transition Layer (Stage 4) */}
+          {!isReferencePlane && isCinematicActive && currentStageId === "stage_depth" && depthWipeProgress > 0 && depthWipeProgress < 1.0 && depthVisTexture && (
+            <>
+              <mesh position={[-width / 2 + (width * depthWipeProgress) / 2, 0, 0.003]}>
+                <planeGeometry args={[Math.max(0.01, width * depthWipeProgress), height]} />
+                <meshBasicMaterial
+                  map={depthVisTexture}
+                  side={THREE.DoubleSide}
+                  transparent={true}
+                  opacity={1.0}
+                  depthWrite={false}
+                />
+              </mesh>
+              {/* Laser Wipe Leading Edge */}
+              <mesh position={[-width / 2 + width * depthWipeProgress, 0, 0.006]}>
+                <planeGeometry args={[0.02, height]} />
+                <meshBasicMaterial
+                  color="#38bdf8"
+                  transparent={true}
+                  opacity={0.9}
+                  side={THREE.DoubleSide}
+                  depthTest={false}
+                />
+              </mesh>
+            </>
+          )}
+
           {/* Border outline */}
           <lineSegments>
             <edgesGeometry args={[new THREE.PlaneGeometry(width, height)]} />
@@ -132,8 +166,8 @@ export const PhotoPlane: React.FC<PhotoPlaneProps> = ({
               color={
                 isReferencePlane
                   ? "#6366f1"
-                  : visualizationMode === "depth"
-                  ? "#a1a1aa"
+                  : visualizationMode === "depth" || currentStageId === "stage_depth"
+                  ? "#38bdf8"
                   : "#3f3f46"
               }
               linewidth={isReferencePlane ? 2 : 1}
@@ -142,9 +176,9 @@ export const PhotoPlane: React.FC<PhotoPlaneProps> = ({
         </>
       )}
 
-      {/* Segmentation Mask Overlays (Only in 2D segmentation inspection mode) */}
+      {/* Segmentation Mask Overlays (2D segmentation mode or Cinematic Stage 3) */}
       {!isReferencePlane &&
-        visualizationMode === "segmentation" &&
+        (visualizationMode === "segmentation" || (isCinematicActive && currentStageId === "stage_segmentation")) &&
         entities.map((entity, idx) => {
           const color = PALETTE[idx % PALETTE.length];
           return (
@@ -158,9 +192,11 @@ export const PhotoPlane: React.FC<PhotoPlaneProps> = ({
           );
         })}
 
-      {/* Detection Bounding Boxes (In 2D detection or segmentation inspection mode) */}
+      {/* Detection Bounding Boxes (2D detection/segmentation mode or Cinematic Stage 2/3) */}
       {!isReferencePlane &&
-        (visualizationMode === "detection" || visualizationMode === "segmentation") &&
+        (visualizationMode === "detection" ||
+          visualizationMode === "segmentation" ||
+          (isCinematicActive && (currentStageId === "stage_detection" || currentStageId === "stage_segmentation"))) &&
         entities.map((entity, idx) => {
           const color = PALETTE[idx % PALETTE.length];
           return (
