@@ -1211,10 +1211,16 @@ class PipelineCoordinator:
             for entity in scene.entities:
                 try:
                     if entity.rig and entity.rig.status == "rigged" and entity.skeleton:
-                        clips = procedural_animation_engine.generate_clips_for_entity(entity.id, entity.skeleton.id)
+                        is_seated = bool(
+                            entity.reconstruction
+                            and "seated" in (entity.reconstruction.stance_description or "").lower()
+                        )
+                        clips = procedural_animation_engine.generate_clips_for_entity(
+                            entity.id, entity.skeleton.id, is_seated=is_seated
+                        )
                         entity.animation_clips = clips
                         if not entity.animation_state.current_clip:
-                            entity.animation_state.current_clip = "idle_breathing"
+                            entity.animation_state.current_clip = "seated_idle" if is_seated else "idle_breathing"
                         prepared_animations += 1
                         event_emitter.emit(
                             job_id=job_id,

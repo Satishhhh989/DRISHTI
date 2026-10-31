@@ -675,10 +675,121 @@ class ProceduralAnimationEngine:
     def generate_clips_for_entity(
         entity_id: str,
         skeleton_id: str,
+        is_seated: bool = False,
     ) -> List[AnimationClipData]:
-        """Generates standard procedural test clips: idle breathing, torso twist, arm wave, walk."""
+        """Generates deterministic humanoid test animation clips for valid articulated rigs.
+        
+        When is_seated is True, generates posture-aware seated clips (seated_idle,
+        seated_weight_shift, arm_wave) preserving seated hip and knee flexion.
+        When is_seated is False, generates standing clips (idle_breathing, torso_twist,
+        arm_wave, gentle_walk).
+        """
         fps = 30.0
 
+        if is_seated:
+            # Clip 1: Seated Idle Breathing (3.5 seconds)
+            # Subtle chest elevation and head micro-tilt; hips and knees remain fixed in seated pose
+            seated_idle_duration = 3.5
+            num_frames = int(seated_idle_duration * fps)
+            timestamps = [round(i / fps, 4) for i in range(num_frames)]
+
+            spine3_quats = []
+            head_quats = []
+            l_sh_quats = []
+            r_sh_quats = []
+            for t in timestamps:
+                phase = (t / seated_idle_duration) * 2.0 * math.pi
+                pitch = 0.025 * math.sin(phase)
+                spine3_quats.append(euler_to_quaternion(pitch, 0.0, 0.0))
+                head_quats.append(euler_to_quaternion(0.01 * math.sin(phase * 0.7), 0.012 * math.cos(phase * 0.5), 0.0))
+                roll = 0.015 * math.sin(phase)
+                l_sh_quats.append(euler_to_quaternion(0.0, 0.0, -roll))
+                r_sh_quats.append(euler_to_quaternion(0.0, 0.0, roll))
+
+            clip_seated_idle = AnimationClipData(
+                id=f"clip-seated-idle-{entity_id}",
+                name="seated_idle",
+                target_entity_id=entity_id,
+                target_skeleton_id=skeleton_id,
+                duration_seconds=seated_idle_duration,
+                is_looping=True,
+                fps=fps,
+                provenance="procedural",
+                tracks=[
+                    JointTransformTrack(joint_id="spine3", timestamps=timestamps, rotations=spine3_quats),
+                    JointTransformTrack(joint_id="head", timestamps=timestamps, rotations=head_quats),
+                    JointTransformTrack(joint_id="left_shoulder", timestamps=timestamps, rotations=l_sh_quats),
+                    JointTransformTrack(joint_id="right_shoulder", timestamps=timestamps, rotations=r_sh_quats),
+                ],
+                created_at=datetime.now(timezone.utc).isoformat(),
+            )
+
+            # Clip 2: Seated Weight Shift (4.5 seconds)
+            # Subtle upper-body weight shift, torso lean and gentle settling; maintains seated lower body
+            shift_duration = 4.5
+            num_frames_shift = int(shift_duration * fps)
+            shift_timestamps = [round(i / fps, 4) for i in range(num_frames_shift)]
+
+            spine2_shift = []
+            head_shift = []
+            for t in shift_timestamps:
+                phase = (t / shift_duration) * 2.0 * math.pi
+                roll = 0.035 * math.sin(phase)
+                yaw = 0.025 * math.sin(phase * 0.5)
+                spine2_shift.append(euler_to_quaternion(0.0, yaw, roll))
+                head_shift.append(euler_to_quaternion(0.0, -yaw * 0.6, -roll * 0.5))
+
+            clip_seated_shift = AnimationClipData(
+                id=f"clip-seated-shift-{entity_id}",
+                name="seated_weight_shift",
+                target_entity_id=entity_id,
+                target_skeleton_id=skeleton_id,
+                duration_seconds=shift_duration,
+                is_looping=True,
+                fps=fps,
+                provenance="procedural",
+                tracks=[
+                    JointTransformTrack(joint_id="spine2", timestamps=shift_timestamps, rotations=spine2_shift),
+                    JointTransformTrack(joint_id="head", timestamps=shift_timestamps, rotations=head_shift),
+                ],
+                created_at=datetime.now(timezone.utc).isoformat(),
+            )
+
+            # Clip 3: Seated Arm Wave / Gesture (2.5 seconds)
+            wave_duration = 2.5
+            num_frames_wave = int(wave_duration * fps)
+            wave_timestamps = [round(i / fps, 4) for i in range(num_frames_wave)]
+
+            r_sh_wave = []
+            r_el_wave = []
+            r_wr_wave = []
+            for t in wave_timestamps:
+                phase = (t / wave_duration) * 2.0 * math.pi
+                r_sh_wave.append(euler_to_quaternion(0.3, 0.0, 0.8))
+                r_el_wave.append(euler_to_quaternion(0.0, 0.0, 0.6))
+                osc = 0.35 * math.sin(phase * 2.0)
+                r_wr_wave.append(euler_to_quaternion(0.0, 0.0, osc))
+
+            clip_seated_wave = AnimationClipData(
+                id=f"clip-seated-wave-{entity_id}",
+                name="arm_wave",
+                target_entity_id=entity_id,
+                target_skeleton_id=skeleton_id,
+                duration_seconds=wave_duration,
+                is_looping=True,
+                fps=fps,
+                provenance="procedural",
+                tracks=[
+                    JointTransformTrack(joint_id="right_shoulder", timestamps=wave_timestamps, rotations=r_sh_wave),
+                    JointTransformTrack(joint_id="right_elbow", timestamps=wave_timestamps, rotations=r_el_wave),
+                    JointTransformTrack(joint_id="right_wrist", timestamps=wave_timestamps, rotations=r_wr_wave),
+                ],
+                created_at=datetime.now(timezone.utc).isoformat(),
+            )
+
+            return [clip_seated_idle, clip_seated_shift, clip_seated_wave]
+
+        # Standing Humanoid Clips (Default)
         # Clip 1: Idle Breathing (3.0 seconds)
         idle_duration = 3.0
         num_frames = int(idle_duration * fps)

@@ -221,5 +221,127 @@ describe("Phase 07 DRISHTI Motion Subsystem View & Controls", () => {
     // Click Reset Pose button
     fireEvent.click(screen.getByTestId("anim-reset-btn"));
     expect(useSceneStore.getState().currentScene?.entities[0].animationState?.isPlaying).toBe(false);
+
+    // Test Stop button
+    fireEvent.click(screen.getByTestId("anim-play-pause-btn"));
+    expect(useSceneStore.getState().currentScene?.entities[0].animationState?.isPlaying).toBe(true);
+    fireEvent.click(screen.getByTestId("anim-stop-btn"));
+    expect(useSceneStore.getState().currentScene?.entities[0].animationState?.isPlaying).toBe(false);
+
+    // Test 2x speed button
+    fireEvent.click(screen.getByTestId("speed-2x"));
+    expect(useSceneStore.getState().currentScene?.entities[0].animationState?.playbackSpeed).toBe(2.0);
+  });
+
+  it("provides posture-aware clips for seated persons (e.g. Person 3 and 5) avoiding standing walk cycles", () => {
+    const mockSeatedEntity: SceneEntity = {
+      id: "person-003",
+      entityType: "person",
+      sourceImageId: "photo-001",
+      name: "Person 3 (Seated)",
+      visibility: true,
+      reconstructionStatus: "ready",
+      transform: {
+        position: { x: 0.2, y: 0.8, z: 2.8 },
+        rotation: { x: 0, y: 0, z: 0 },
+        scale: { x: 1.0, y: 1.0, z: 1.0 },
+      },
+      animationState: {
+        currentClip: "seated_idle",
+        isPlaying: false,
+        playbackSpeed: 1.0,
+        loop: true,
+      },
+      showSkeleton: false,
+      reconstruction: {
+        status: "ready",
+        meshAssetId: "mesh-003",
+        meshUrl: "/api/v1/assets/meshes/person_003.glb",
+        textureAvailability: "partial",
+        stanceDescription: "Seated Posture (Knee Flexion: 92.4°, Hip Flexion: 114.1°)",
+        geometryMetadata: {
+          vertexCount: 6890,
+          faceCount: 13776,
+          bounds: { min: [-0.3, -0.6, -0.4], max: [0.3, 0.6, 0.4] },
+          dimensions: [0.6, 1.2, 0.8],
+        },
+      },
+      skeleton: {
+        id: "skel-003",
+        entityId: "person-003",
+        schemaVersion: "1.0.0",
+        rootJointId: "pelvis",
+        joints: [],
+        bones: [],
+        coordinateConvention: { up: "+Y", forward: "+Z", right: "+X", units: "meters" },
+        source: "smpl_regressed",
+        isAligned: true,
+        validationStatus: "valid",
+        validationErrors: [],
+        createdAt: new Date().toISOString(),
+      },
+      rig: {
+        id: "rig-003",
+        entityId: "person-003",
+        skeletonId: "skel-003",
+        status: "rigged",
+        skinningMethod: "smpl_lbs_native",
+        boneCount: 24,
+        maxInfluencesPerVertex: 4,
+        weightsNormalized: true,
+      },
+    };
+
+    const mockScene: Scene = {
+      id: "scene-seated",
+      schemaVersion: "1.0.0",
+      name: "Seated Test Scene",
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      sourceImage: {
+        assetId: "photo-001",
+        filename: "test.jpg",
+        width: 1000,
+        height: 800,
+        aspectRatio: 1.25,
+        mimeType: "image/jpeg",
+        sizeBytes: 120000,
+        uploadedAt: new Date().toISOString(),
+      },
+      coordinateSystem: {
+        handedness: "right-handed",
+        upAxis: "+Y",
+        forwardAxis: "+Z",
+        rightAxis: "+X",
+        unit: "meters",
+      },
+      entities: [mockSeatedEntity],
+      representations: {
+        photo: { status: "ready", updatedAt: new Date().toISOString() },
+        combined: { status: "ready", updatedAt: new Date().toISOString() },
+      },
+      processingStatus: "ready",
+    };
+
+    act(() => {
+      useSceneStore.getState().setScene(mockScene);
+      useUIStore.getState().selectEntity("person-003");
+    });
+
+    render(<ContextualPanel />);
+
+    // Expect seated stance indication badge
+    expect(screen.getByText("Seated Stance")).toBeInTheDocument();
+
+    // Expect seated clip selector with seated idle as current value
+    const select = screen.getByTestId("clip-select") as HTMLSelectElement;
+    expect(select.value).toBe("seated_idle");
+
+    // Options must include seated idle and seated weight shift
+    const optionValues = Array.from(select.options).map((opt) => opt.value);
+    expect(optionValues).toContain("seated_idle");
+    expect(optionValues).toContain("seated_weight_shift");
+    // Crucial: Seated persons must NOT have a standing walking cycle
+    expect(optionValues).not.toContain("gentle_walk");
   });
 });

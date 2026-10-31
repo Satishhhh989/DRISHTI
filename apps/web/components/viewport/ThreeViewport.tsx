@@ -6,7 +6,8 @@ import { CameraController } from "./CameraController";
 import { GridFloor } from "./GridFloor";
 import { ViewportErrorBoundary } from "./ViewportErrorBoundary";
 import { PhotoPlane } from "@/components/scene/PhotoPlane";
-import { HumanMeshLayer } from "@/components/scene/HumanMeshLayer";
+import { HumanMeshLayer, Unified3DMode } from "@/components/scene/HumanMeshLayer";
+import { LiveReconstructionController } from "@/components/scene/LiveReconstructionController";
 import { UploadButton } from "@/components/controls/UploadButton";
 import { useSceneStore } from "@/stores/scene-store";
 import { useUIStore } from "@/stores/ui-store";
@@ -17,11 +18,13 @@ import styles from "./ThreeViewport.module.css";
 export const ThreeViewport: React.FC = () => {
   const [mounted, setMounted] = useState(false);
   const [isDragOver, setIsDragOver] = useState(false);
+  const [assemblyProgress, setAssemblyProgress] = useState(1.0);
 
   const localPhotoUrl = useSceneStore((state) => state.localPhotoUrl);
   const photoDimensions = useSceneStore((state) => state.photoDimensions);
   const activeRepresentation = useSceneStore((state) => state.activeRepresentation);
   const currentScene = useSceneStore((state) => state.currentScene);
+  const isAnalyzing = useSceneStore((state) => state.isAnalyzing);
   const setLocalPhoto = useSceneStore((state) => state.setLocalPhoto);
   const setScene = useSceneStore((state) => state.setScene);
   const setIsUploading = useSceneStore((state) => state.setIsUploading);
@@ -97,7 +100,8 @@ export const ThreeViewport: React.FC = () => {
     activeRepresentation === "wireframe" ||
     activeRepresentation === "solid3d" ||
     activeRepresentation === "articulated" ||
-    activeRepresentation === "combined";
+    activeRepresentation === "combined" ||
+    (isAnalyzing && hasReconstructedMeshes);
 
   return (
     <div
@@ -175,8 +179,11 @@ export const ThreeViewport: React.FC = () => {
               {/* Spatial Floor Reference */}
               <GridFloor />
 
+              {/* 0. Real-time Live Reconstruction Presentation Controller */}
+              <LiveReconstructionController onAssemblyProgress={setAssemblyProgress} />
+
               {/* 1. Photographic plane rendered in 3D coordinate space (Photo / Inspection Modes) */}
-              {activeRepresentation === "photo" && photoDimensions && (
+              {(activeRepresentation === "photo" || (isAnalyzing && !hasReconstructedMeshes)) && photoDimensions && (
                 <PhotoPlane
                   photoUrl={localPhotoUrl}
                   aspectRatio={photoDimensions.aspect}
@@ -185,7 +192,7 @@ export const ThreeViewport: React.FC = () => {
               )}
 
               {/* 2. Hybrid Combined Scene: Photographic Reference Plane + Assembled 3D Characters */}
-              {activeRepresentation === "combined" && photoDimensions && (
+              {(activeRepresentation === "combined" || (isAnalyzing && hasReconstructedMeshes)) && photoDimensions && (
                 <PhotoPlane
                   photoUrl={localPhotoUrl}
                   aspectRatio={photoDimensions.aspect}
@@ -195,7 +202,17 @@ export const ThreeViewport: React.FC = () => {
 
               {/* 3. Reconstructed 3D Human Meshes (Wireframe, Solid, Articulated, or Combined) */}
               {is3DMode && (
-                <HumanMeshLayer mode={activeRepresentation as "wireframe" | "solid3d" | "articulated" | "combined"} />
+                <HumanMeshLayer
+                  mode={
+                    (activeRepresentation === "wireframe" ||
+                    activeRepresentation === "solid3d" ||
+                    activeRepresentation === "articulated" ||
+                    activeRepresentation === "combined"
+                      ? activeRepresentation
+                      : "combined") as Unified3DMode
+                  }
+                  presentationProgress={assemblyProgress}
+                />
               )}
 
               {/* Camera navigation */}

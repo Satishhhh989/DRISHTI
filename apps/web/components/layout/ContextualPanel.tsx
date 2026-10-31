@@ -1317,93 +1317,167 @@ export const ContextualPanel: React.FC = () => {
               <div className={styles.sectionHeader} style={{ marginBottom: "6px" }}>Motion & Animation</div>
               {selectedEntity.rig?.status === "rigged" ? (
                 <>
-                  <label style={{ fontSize: "10px", color: "#a1a1aa" }}>Animation Clip</label>
-                  <select
-                    className={styles.clipSelect}
-                    value={selectedEntity.animationState?.currentClip || "idle_breathing"}
-                    onChange={(e) => {
-                      setEntityAnimation(
-                        selectedEntity.id,
-                        e.target.value,
-                        selectedEntity.animationState?.isPlaying ?? false,
-                        selectedEntity.animationState?.playbackSpeed ?? 1.0,
-                        selectedEntity.animationState?.loop ?? true
-                      );
-                    }}
-                    data-testid="clip-select"
-                  >
-                    <option value="idle_breathing">Idle Breathing (3.0s)</option>
-                    <option value="torso_twist">Torso Twist (4.0s)</option>
-                    <option value="arm_wave">Arm Wave (2.5s)</option>
-                    <option value="gentle_walk">Gentle Walk (2.0s)</option>
-                  </select>
+                  {(() => {
+                    const stanceDesc = (selectedEntity.reconstruction?.stanceDescription || "").toLowerCase();
+                    const isSeated = stanceDesc.includes("seated") || (selectedEntity.animationState?.currentClip || "").startsWith("seated");
+                    const availableClips = (selectedEntity.animationClips && selectedEntity.animationClips.length > 0)
+                      ? selectedEntity.animationClips.map((c) => ({
+                          id: c.name,
+                          name: c.name,
+                          label: c.name === "idle_breathing" ? "Idle Breathing" :
+                                 c.name === "torso_twist" ? "Torso Twist" :
+                                 c.name === "arm_wave" ? "Arm Wave" :
+                                 c.name === "gentle_walk" ? "Gentle Walk" :
+                                 c.name === "seated_idle" ? "Seated Idle Breathing" :
+                                 c.name === "seated_weight_shift" ? "Seated Weight Shift" :
+                                 c.name.replace(/_/g, " "),
+                          duration: c.duration_seconds ?? (c as unknown as { durationSeconds?: number }).durationSeconds ?? 3.0,
+                        }))
+                      : isSeated
+                      ? [
+                          { id: "seated_idle", name: "seated_idle", label: "Seated Idle Breathing", duration: 3.5 },
+                          { id: "seated_weight_shift", name: "seated_weight_shift", label: "Seated Weight Shift", duration: 4.5 },
+                          { id: "arm_wave", name: "arm_wave", label: "Arm Wave", duration: 2.5 },
+                        ]
+                      : [
+                          { id: "idle_breathing", name: "idle_breathing", label: "Idle Breathing", duration: 3.0 },
+                          { id: "torso_twist", name: "torso_twist", label: "Torso Twist", duration: 4.0 },
+                          { id: "arm_wave", name: "arm_wave", label: "Arm Wave", duration: 2.5 },
+                          { id: "gentle_walk", name: "gentle_walk", label: "Gentle Walk", duration: 2.0 },
+                        ];
 
-                  <div className={styles.animControls}>
-                    <button
-                      type="button"
-                      className={`${styles.animButton} ${
-                        selectedEntity.animationState?.isPlaying ? styles.playing : ""
-                      }`}
-                      onClick={() => {
-                        const playing = !selectedEntity.animationState?.isPlaying;
-                        setEntityAnimation(
-                          selectedEntity.id,
-                          selectedEntity.animationState?.currentClip || "idle_breathing",
-                          playing
-                        );
-                      }}
-                      data-testid="anim-play-pause-btn"
-                    >
-                      {selectedEntity.animationState?.isPlaying ? "Pause" : "Play"}
-                    </button>
-                    <button
-                      type="button"
-                      className={styles.animButton}
-                      onClick={() => resetEntityPose(selectedEntity.id)}
-                      data-testid="anim-reset-btn"
-                    >
-                      Reset Pose
-                    </button>
-                  </div>
+                    const defaultClip = isSeated ? "seated_idle" : "idle_breathing";
+                    const currentClip = selectedEntity.animationState?.currentClip || defaultClip;
 
-                  <div className={styles.propRow} style={{ marginTop: "6px" }}>
-                    <span className={styles.propLabel}>Playback Speed</span>
-                    <div style={{ display: "flex", gap: "4px" }}>
-                      {[0.5, 1.0, 1.5].map((speed) => (
-                        <button
-                          key={speed}
-                          type="button"
-                          className={styles.tagBadge}
-                          style={{
-                            cursor: "pointer",
-                            background:
-                              (selectedEntity.animationState?.playbackSpeed ?? 1.0) === speed
-                                ? "#3b82f6"
-                                : "#27272a",
-                            color:
-                              (selectedEntity.animationState?.playbackSpeed ?? 1.0) === speed
-                                ? "#ffffff"
-                                : "#a1a1aa",
-                          }}
-                          onClick={() => {
+                    return (
+                      <>
+                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "4px" }}>
+                          <label style={{ fontSize: "10px", color: "#a1a1aa" }}>Animation Clip</label>
+                          <span style={{ fontSize: "10px", color: isSeated ? "#f59e0b" : "#38bdf8" }}>
+                            {isSeated ? "Seated Stance" : "Standing Stance"}
+                          </span>
+                        </div>
+                        <select
+                          className={styles.clipSelect}
+                          value={currentClip}
+                          onChange={(e) => {
                             setEntityAnimation(
                               selectedEntity.id,
-                              selectedEntity.animationState?.currentClip || "idle_breathing",
+                              e.target.value,
                               selectedEntity.animationState?.isPlaying ?? false,
-                              speed
+                              selectedEntity.animationState?.playbackSpeed ?? 1.0,
+                              selectedEntity.animationState?.loop ?? true
                             );
                           }}
-                          data-testid={`speed-${speed}x`}
+                          data-testid="clip-select"
                         >
-                          {speed}x
-                        </button>
-                      ))}
-                    </div>
-                  </div>
+                          {availableClips.map((clip) => (
+                            <option key={clip.id} value={clip.name}>
+                              {clip.label} ({clip.duration.toFixed(1)}s)
+                            </option>
+                          ))}
+                        </select>
 
-                  <div className={styles.disclaimerBadge} data-testid="anim-disclaimer">
-                    Procedural Test Animation (Not recovered motion from photo)
-                  </div>
+                        <div className={styles.animControls}>
+                          <button
+                            type="button"
+                            className={`${styles.animButton} ${
+                              selectedEntity.animationState?.isPlaying ? styles.playing : ""
+                            }`}
+                            onClick={() => {
+                              const playing = !selectedEntity.animationState?.isPlaying;
+                              setEntityAnimation(
+                                selectedEntity.id,
+                                currentClip,
+                                playing
+                              );
+                            }}
+                            data-testid="anim-play-pause-btn"
+                          >
+                            {selectedEntity.animationState?.isPlaying ? "Pause" : "Play"}
+                          </button>
+                          <button
+                            type="button"
+                            className={styles.animButton}
+                            onClick={() => {
+                              setEntityAnimation(
+                                selectedEntity.id,
+                                currentClip,
+                                false
+                              );
+                            }}
+                            data-testid="anim-stop-btn"
+                          >
+                            Stop
+                          </button>
+                          <button
+                            type="button"
+                            className={styles.animButton}
+                            onClick={() => resetEntityPose(selectedEntity.id)}
+                            data-testid="anim-reset-btn"
+                          >
+                            Reset Pose
+                          </button>
+                        </div>
+
+                        <div className={styles.propRow} style={{ marginTop: "6px" }}>
+                          <span className={styles.propLabel}>Playback Speed</span>
+                          <div style={{ display: "flex", gap: "4px" }}>
+                            {[0.5, 1.0, 1.5, 2.0].map((speed) => (
+                              <button
+                                key={speed}
+                                type="button"
+                                className={styles.tagBadge}
+                                style={{
+                                  cursor: "pointer",
+                                  background:
+                                    (selectedEntity.animationState?.playbackSpeed ?? 1.0) === speed
+                                      ? "#3b82f6"
+                                      : "#27272a",
+                                  color:
+                                    (selectedEntity.animationState?.playbackSpeed ?? 1.0) === speed
+                                      ? "#ffffff"
+                                      : "#a1a1aa",
+                                }}
+                                onClick={() => {
+                                  setEntityAnimation(
+                                    selectedEntity.id,
+                                    currentClip,
+                                    selectedEntity.animationState?.isPlaying ?? false,
+                                    speed
+                                  );
+                                }}
+                                data-testid={`speed-${speed}x`}
+                              >
+                                {speed}x
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+
+                        {/* Visual Timeline Bar */}
+                        <div style={{ marginTop: "6px", display: "flex", alignItems: "center", gap: "6px" }}>
+                          <div style={{ flex: 1, height: "4px", background: "#27272e", borderRadius: "2px", overflow: "hidden" }}>
+                            <div
+                              style={{
+                                height: "100%",
+                                width: selectedEntity.animationState?.isPlaying ? "100%" : "0%",
+                                background: "#3b82f6",
+                                transition: selectedEntity.animationState?.isPlaying ? "width 3s linear infinite" : "none",
+                              }}
+                            />
+                          </div>
+                          <span style={{ fontSize: "9px", color: "#71717a", minWidth: "35px" }}>
+                            {selectedEntity.animationState?.isPlaying ? "ACTIVE" : "REST"}
+                          </span>
+                        </div>
+
+                        <div className={styles.disclaimerBadge} data-testid="anim-disclaimer">
+                          Procedural Test Animation (Not recovered motion from photo)
+                        </div>
+                      </>
+                    );
+                  })()}
                 </>
               ) : (
                 <div className={styles.emptyNotice} style={{ padding: "4px 0", fontSize: "11px" }}>

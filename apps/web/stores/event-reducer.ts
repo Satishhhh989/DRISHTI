@@ -145,7 +145,7 @@ export function reduceProcessingEvent<T extends ReducerState>(
                     status: "ready" as const,
                     meshAssetId: assetRef.assetId,
                     meshUrl: assetRef.uri,
-                    textureAvailability: "none" as const,
+                    textureAvailability: "partial" as const, // Vertex color projection from photo
                     reconstructedAt: event.timestamp,
                   },
                 };
