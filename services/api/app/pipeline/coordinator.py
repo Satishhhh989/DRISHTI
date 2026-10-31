@@ -19,6 +19,7 @@ Executes the sequenced lifecycle with genuine progressive state updates and canc
 import asyncio
 import cv2
 from datetime import datetime, timezone
+import inspect
 import io
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
@@ -659,15 +660,85 @@ class PipelineCoordinator:
                     scene_manager.update_scene(scene)
 
             # -------------------------------------------------------------
-            # Stage 11: HUMAN 3D RECONSTRUCTION ENGINE
+            # Stage 11: POSE_ESTIMATION (Phase 07: 2D Keypoint Extraction for Fitting)
             # -------------------------------------------------------------
-            if include_reconstruction and entities:
+            pose_results_by_entity: Dict[str, PoseEstimationResult] = {}
+            if entities:
                 # Check cancellation
                 if job_tracker.is_cancelled(job_id):
                     scene.processing_status = "ready"
                     scene_manager.update_scene(scene)
                     return scene
 
+                job_tracker.update_job_status(job_id, status="running", current_stage="pose_estimation")
+                event_emitter.emit(
+                    job_id=job_id,
+                    scene_id=scene_id,
+                    event_type="stage_started",
+                    stage_identifier="pose_estimation",
+                    status="running",
+                    progress=0.88,
+                    message=f"Estimating 2D human pose keypoints for {len(entities)} entities...",
+                )
+
+                try:
+                    pose_model_path = model_manager.get_model_path("yolov8n-pose")
+                    if pose_model_path.exists() and not isinstance(self.get_detector(), MockPersonDetector):
+                        pose_estimator: IPoseEstimator = YoloPoseEstimator(model_path=pose_model_path, device=device_manager.device)
+                    else:
+                        pose_estimator = MockPoseEstimator()
+
+                    img_for_pose = cv2.imread(str(photo_path)) if photo_path.exists() else None
+                    if img_for_pose is None:
+                        img_for_pose = np.zeros((scene.source_image.height, scene.source_image.width, 3), dtype=np.uint8)
+
+                    boxes = [e.detection.bounding_box for e in entities if e.detection and e.detection.bounding_box]
+                    all_poses = pose_estimator.estimate_poses(img_for_pose, boxes)
+
+                    for entity in entities:
+                        if not entity.detection or not entity.detection.bounding_box:
+                            continue
+                        best_iou = 0.0
+                        best_pose = None
+                        for p in all_poses:
+                            iou = compute_2d_iou(entity.detection.bounding_box, p.bounding_box)
+                            if iou > best_iou:
+                                best_iou = iou
+                                best_pose = p
+                        if best_pose and best_iou > 0.10:
+                            pose_results_by_entity[entity.id] = best_pose
+
+                    event_emitter.emit(
+                        job_id=job_id,
+                        scene_id=scene_id,
+                        event_type="stage_completed",
+                        stage_identifier="pose_estimation",
+                        status="running",
+                        progress=0.91,
+                        message=f"Pose estimation complete ({len(pose_results_by_entity)} of {len(entities)} people matched).",
+                    )
+                except Exception as pose_err:
+                    logger.warning(f"Pose estimation non-fatal error: {pose_err}")
+                    event_emitter.emit(
+                        job_id=job_id,
+                        scene_id=scene_id,
+                        event_type="stage_failed",
+                        stage_identifier="pose_estimation",
+                        status="running",
+                        error=StructuredError(code="POSE_ESTIMATION_ERROR", message=str(pose_err)),
+                    )
+
+            # Check cancellation
+            if job_tracker.is_cancelled(job_id):
+                scene.processing_status = "ready"
+                scene_manager.update_scene(scene)
+                return scene
+
+            # -------------------------------------------------------------
+            # Stage 12: HUMAN 3D RECONSTRUCTION ENGINE (With SMPLify Pose Fitting)
+            # -------------------------------------------------------------
+            reconstructed_vertices: Dict[str, np.ndarray] = {}
+            if include_reconstruction and entities:
                 job_tracker.update_job_status(job_id, status="running", current_stage="human_reconstruction")
                 event_emitter.emit(
                     job_id=job_id,
@@ -675,15 +746,14 @@ class PipelineCoordinator:
                     event_type="stage_started",
                     stage_identifier="human_reconstruction",
                     status="running",
-                    progress=0.92,
-                    message=f"Starting 3D human mesh reconstruction for {len(entities)} detected people...",
+                    progress=0.91,
+                    message=f"Starting image-conditioned 3D human reconstruction for {len(entities)} detected people...",
                 )
 
                 try:
                     reconstructor = self.get_reconstructor()
                     total_people = len(entities)
                     successful_meshes = 0
-                    reconstructed_vertices: Dict[str, np.ndarray] = {}
 
                     img_bgr = cv2.imread(str(photo_path))
                     if img_bgr is not None:
@@ -702,13 +772,21 @@ class PipelineCoordinator:
                             seg_res = seg_map.get(entity.id)
                             mask_bytes = seg_res.mask_png_bytes if seg_res else None
                             depth_info = entity.depth
+                            matched_pose = pose_results_by_entity.get(entity.id)
 
-                            rec_result = reconstructor.reconstruct(
-                                image_rgb=img_rgb,
-                                bounding_box=entity.detection.bounding_box,
-                                mask_gray=mask_bytes,
-                                depth_stats=depth_info.model_dump() if depth_info else None,
-                            )
+                            rec_kwargs: Dict[str, Any] = {
+                                "image_rgb": img_rgb,
+                                "bounding_box": entity.detection.bounding_box,
+                                "mask_gray": mask_bytes,
+                                "depth_stats": depth_info.model_dump() if depth_info else None,
+                            }
+                            sig = inspect.signature(reconstructor.reconstruct)
+                            if "pose_result" in sig.parameters or any(p.kind == inspect.Parameter.VAR_KEYWORD for p in sig.parameters.values()):
+                                rec_kwargs["pose_result"] = matched_pose
+                            if "quality_preset" in sig.parameters or any(p.kind == inspect.Parameter.VAR_KEYWORD for p in sig.parameters.values()):
+                                rec_kwargs["quality_preset"] = "high"
+
+                            rec_result = reconstructor.reconstruct(**rec_kwargs)
                             reconstructed_vertices[entity.id] = rec_result.vertices
 
                             # Save GLB asset
@@ -785,6 +863,10 @@ class PipelineCoordinator:
                                 transform=entity_transform,
                                 texture_availability="none",
                                 quality_score=rec_result.quality_score,
+                                quality_preset=rec_result.quality_preset,
+                                reprojection_error_pixels=rec_result.reprojection_error_pixels,
+                                reprojection_error_normalized=rec_result.reprojection_error_normalized,
+                                silhouette_iou=rec_result.silhouette_iou,
                                 warnings=rec_result.warnings,
                                 reconstructed_at=datetime.now(timezone.utc).isoformat(),
                             )
@@ -801,7 +883,7 @@ class PipelineCoordinator:
                                 event_type="asset_ready",
                                 stage_identifier="human_reconstruction",
                                 status="running",
-                                progress=0.92 + (0.04 * (idx / total_people)),
+                                progress=0.91 + (0.03 * (idx / total_people)),
                                 entity_id=entity.id,
                                 asset_reference=AssetReference(
                                     asset_id=mesh_asset.asset_id,
@@ -810,7 +892,7 @@ class PipelineCoordinator:
                                     mime_type="model/gltf-binary",
                                     size_bytes=mesh_asset.size_bytes,
                                 ),
-                                message=f"3D human mesh ready for {entity.id} ({idx} of {total_people}).",
+                                message=f"3D human mesh ready for {entity.id} ({idx} of {total_people}) [Reproj Error: {rec_result.reprojection_error_pixels:.1f}px, IoU: {rec_result.silhouette_iou:.2f}].",
                             )
 
                         except Exception as person_rec_err:
@@ -844,7 +926,7 @@ class PipelineCoordinator:
                         event_type="stage_completed",
                         stage_identifier="human_reconstruction",
                         status="running",
-                        progress=0.96,
+                        progress=0.94,
                         message=f"Human 3D reconstruction complete ({successful_meshes} of {total_people} meshes generated).",
                     )
 
@@ -868,73 +950,6 @@ class PipelineCoordinator:
                 scene_manager.update_scene(scene)
                 return scene
 
-            # -------------------------------------------------------------
-            # Stage 12: POSE_ESTIMATION (Phase 07)
-            # -------------------------------------------------------------
-            job_tracker.update_job_status(job_id, status="running", current_stage="pose_estimation")
-            event_emitter.emit(
-                job_id=job_id,
-                scene_id=scene_id,
-                event_type="stage_started",
-                stage_identifier="pose_estimation",
-                status="running",
-                progress=0.92,
-                message=f"Estimating 2D human pose keypoints for {len(scene.entities)} entities...",
-            )
-
-            pose_results_by_entity: Dict[str, PoseEstimationResult] = {}
-            try:
-                pose_model_path = model_manager.get_model_path("yolov8n-pose")
-                if pose_model_path.exists() and not isinstance(self.get_detector(), MockPersonDetector):
-                    pose_estimator: IPoseEstimator = YoloPoseEstimator(model_path=pose_model_path, device=device_manager.device)
-                else:
-                    pose_estimator = MockPoseEstimator()
-
-                img_for_pose = cv2.imread(str(photo_path)) if photo_path.exists() else None
-                if img_for_pose is None:
-                    img_for_pose = np.zeros((scene.source_image.height, scene.source_image.width, 3), dtype=np.uint8)
-
-                boxes = [e.detection.bounding_box for e in scene.entities if e.detection and e.detection.bounding_box]
-                all_poses = pose_estimator.estimate_poses(img_for_pose, boxes)
-
-                for entity in scene.entities:
-                    if not entity.detection or not entity.detection.bounding_box:
-                        continue
-                    best_iou = 0.0
-                    best_pose = None
-                    for p in all_poses:
-                        iou = compute_2d_iou(entity.detection.bounding_box, p.bounding_box)
-                        if iou > best_iou:
-                            best_iou = iou
-                            best_pose = p
-                    if best_pose and best_iou > 0.10:
-                        pose_results_by_entity[entity.id] = best_pose
-
-                event_emitter.emit(
-                    job_id=job_id,
-                    scene_id=scene_id,
-                    event_type="stage_completed",
-                    stage_identifier="pose_estimation",
-                    status="running",
-                    progress=0.93,
-                    message=f"Pose estimation complete ({len(pose_results_by_entity)} of {len(scene.entities)} people matched).",
-                )
-            except Exception as pose_err:
-                logger.warning(f"Pose estimation non-fatal error: {pose_err}")
-                event_emitter.emit(
-                    job_id=job_id,
-                    scene_id=scene_id,
-                    event_type="stage_failed",
-                    stage_identifier="pose_estimation",
-                    status="running",
-                    error=StructuredError(code="POSE_ESTIMATION_ERROR", message=str(pose_err)),
-                )
-
-            # Check cancellation
-            if job_tracker.is_cancelled(job_id):
-                scene.processing_status = "ready"
-                scene_manager.update_scene(scene)
-                return scene
 
             # -------------------------------------------------------------
             # Stage 13: SKELETON_FITTING (Phase 07)

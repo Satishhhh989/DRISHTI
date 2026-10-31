@@ -774,6 +774,38 @@ export const ContextualPanel: React.FC = () => {
                     </span>
                   </div>
                 )}
+                {selectedEntity.reconstruction.qualityPreset && (
+                  <div className={styles.propRow}>
+                    <span className={styles.propLabel}>Quality Preset</span>
+                    <span className={styles.propValue} style={{ textTransform: "capitalize", fontSize: "11px" }}>
+                      {selectedEntity.reconstruction.qualityPreset}
+                    </span>
+                  </div>
+                )}
+                {selectedEntity.reconstruction.reprojectionErrorPixels !== undefined && (
+                  <div className={styles.propRow}>
+                    <span className={styles.propLabel}>Reproj Error</span>
+                    <span className={styles.propValue} style={{ color: "#10b981" }}>
+                      {selectedEntity.reconstruction.reprojectionErrorPixels.toFixed(1)} px
+                    </span>
+                  </div>
+                )}
+                {selectedEntity.reconstruction.silhouetteIou !== undefined && (
+                  <div className={styles.propRow}>
+                    <span className={styles.propLabel}>Silhouette IoU</span>
+                    <span className={styles.propValue}>
+                      {(selectedEntity.reconstruction.silhouetteIou * 100).toFixed(1)}%
+                    </span>
+                  </div>
+                )}
+                {selectedEntity.reconstruction.qualityScore !== undefined && (
+                  <div className={styles.propRow}>
+                    <span className={styles.propLabel}>Quality Score</span>
+                    <span className={styles.propValue}>
+                      {(selectedEntity.reconstruction.qualityScore * 100).toFixed(1)}%
+                    </span>
+                  </div>
+                )}
                 <div className={styles.propRow}>
                   <span className={styles.propLabel}>Texture</span>
                   <span className={styles.propValue} style={{ fontSize: "10px" }}>

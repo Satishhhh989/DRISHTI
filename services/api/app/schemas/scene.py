@@ -198,6 +198,10 @@ class HumanReconstructionData(BaseModel):
     transform: Optional[Transform] = None
     texture_availability: Literal["none", "partial", "full"] = "none"
     quality_score: Optional[float] = None
+    quality_preset: Optional[str] = "high"
+    reprojection_error_pixels: Optional[float] = None
+    reprojection_error_normalized: Optional[float] = None
+    silhouette_iou: Optional[float] = None
     warnings: List[str] = Field(default_factory=list)
     error_message: Optional[str] = None
     reconstructed_at: Optional[str] = None

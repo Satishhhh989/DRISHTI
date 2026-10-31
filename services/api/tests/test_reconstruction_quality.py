@@ -438,3 +438,282 @@ def test_scene_save_and_reopen():
     assert reloaded.entities[0].transform.position.x == 0.5
     assert reloaded.entities[0].transform.position.y == 1.0
     assert reloaded.entities[0].transform.scale.x == 0.95
+
+
+# ---------------------------------------------------------------------------
+# 16. SMPL Pose Fitting: Seated Person Preservation
+# ---------------------------------------------------------------------------
+def test_smpl_pose_fitting_seated_person():
+    smpl_path = Path("data/models/human_reconstruction/SMPL_N_model.npz")
+    mean_path = Path("data/models/human_reconstruction/smpl_mean_params.npz")
+    if not smpl_path.exists() or not mean_path.exists():
+        pytest.skip("SMPL model files not present in data/models/human_reconstruction")
+
+    from app.pipeline.motion import PoseEstimationResult, PoseKeypoint2D
+    from app.pipeline.reconstructor import SMPLForwardLayer, SMPLPoseFitter
+
+    npz_data = np.load(smpl_path, allow_pickle=True)
+    smpl = SMPLForwardLayer(npz_data)
+    mean_data = np.load(mean_path)
+
+    init_pose = torch.tensor(mean_data["pose"], dtype=torch.float32).unsqueeze(0)
+    init_shape = torch.tensor(mean_data["shape"], dtype=torch.float32).unsqueeze(0)
+    init_cam = torch.tensor(mean_data["cam"], dtype=torch.float32).unsqueeze(0)
+
+    fitter = SMPLPoseFitter(smpl=smpl, weights=npz_data["weights"], device=torch.device("cpu"))
+
+    # Synthetic keypoints for a seated person in 1000x1000 image:
+    # Pelvis at y=500, knees horizontal forward at y=520, ankles straight down at y=800
+    kps = {
+        "head": PoseKeypoint2D(x_norm=0.50, y_norm=0.20, confidence=0.98, is_visible=True),
+        "left_shoulder": PoseKeypoint2D(x_norm=0.58, y_norm=0.32, confidence=0.95, is_visible=True),
+        "right_shoulder": PoseKeypoint2D(x_norm=0.42, y_norm=0.32, confidence=0.95, is_visible=True),
+        "left_elbow": PoseKeypoint2D(x_norm=0.60, y_norm=0.45, confidence=0.90, is_visible=True),
+        "right_elbow": PoseKeypoint2D(x_norm=0.40, y_norm=0.45, confidence=0.90, is_visible=True),
+        "left_wrist": PoseKeypoint2D(x_norm=0.55, y_norm=0.52, confidence=0.92, is_visible=True),
+        "right_wrist": PoseKeypoint2D(x_norm=0.45, y_norm=0.52, confidence=0.92, is_visible=True),
+        "left_hip": PoseKeypoint2D(x_norm=0.56, y_norm=0.50, confidence=0.95, is_visible=True),
+        "right_hip": PoseKeypoint2D(x_norm=0.44, y_norm=0.50, confidence=0.95, is_visible=True),
+        "left_knee": PoseKeypoint2D(x_norm=0.58, y_norm=0.53, confidence=0.95, is_visible=True),
+        "right_knee": PoseKeypoint2D(x_norm=0.42, y_norm=0.53, confidence=0.95, is_visible=True),
+        "left_ankle": PoseKeypoint2D(x_norm=0.58, y_norm=0.82, confidence=0.96, is_visible=True),
+        "right_ankle": PoseKeypoint2D(x_norm=0.42, y_norm=0.82, confidence=0.96, is_visible=True),
+    }
+    pose_res = PoseEstimationResult(
+        bounding_box=BoundingBox2D(x_min=0.35, y_min=0.15, x_max=0.65, y_max=0.85),
+        keypoints=kps,
+        confidence_score=0.95,
+        model_name="YOLOv8-Pose",
+    )
+
+    bbox = BoundingBox2D(x_min=0.35, y_min=0.15, x_max=0.65, y_max=0.85)
+    dummy_img = np.zeros((1000, 1000, 3), dtype=np.uint8)
+    _, meta = prepare_person_crop(dummy_img, bbox)
+
+    fitted_pose, fitted_shape, fitted_cam, metrics = fitter.fit(
+        init_pose=init_pose,
+        init_shape=init_shape,
+        init_cam=init_cam,
+        pose_result=pose_res,
+        transform_meta=meta,
+        quality_preset="high",
+    )
+
+    # Verify reprojection error is reasonably bounded (< 35.0 crop pixels)
+    assert metrics["reprojection_error_pixels"] < 35.0
+    assert metrics["quality_score"] > 0.30
+
+    # Verify 3D joints reflect sitting posture:
+    with torch.no_grad():
+        v = smpl(fitted_pose, fitted_shape)
+        j = torch.matmul(smpl.J_regressor, v).numpy()
+        # Left knee dy from hip vs ankle dy from knee
+        thigh_dy = abs(j[4, 1] - j[1, 1])
+        shin_dy = abs(j[7, 1] - j[4, 1])
+        # In sitting pose, thigh vertical drop is small while shin vertical drop is large
+        assert thigh_dy < (shin_dy * 0.8)
+
+
+# ---------------------------------------------------------------------------
+# 17. SMPL Pose Fitting: Crossed Arms Preservation
+# ---------------------------------------------------------------------------
+def test_smpl_pose_fitting_crossed_arms():
+    smpl_path = Path("data/models/human_reconstruction/SMPL_N_model.npz")
+    mean_path = Path("data/models/human_reconstruction/smpl_mean_params.npz")
+    if not smpl_path.exists() or not mean_path.exists():
+        pytest.skip("SMPL model files not present in data/models/human_reconstruction")
+
+    from app.pipeline.motion import PoseEstimationResult, PoseKeypoint2D
+    from app.pipeline.reconstructor import SMPLForwardLayer, SMPLPoseFitter
+
+    npz_data = np.load(smpl_path, allow_pickle=True)
+    smpl = SMPLForwardLayer(npz_data)
+    mean_data = np.load(mean_path)
+
+    init_pose = torch.tensor(mean_data["pose"], dtype=torch.float32).unsqueeze(0)
+    init_shape = torch.tensor(mean_data["shape"], dtype=torch.float32).unsqueeze(0)
+    init_cam = torch.tensor(mean_data["cam"], dtype=torch.float32).unsqueeze(0)
+
+    fitter = SMPLPoseFitter(smpl=smpl, weights=npz_data["weights"], device=torch.device("cpu"))
+
+    # Crossed arms keypoints: wrists cross at center chest
+    kps = {
+        "head": PoseKeypoint2D(x_norm=0.50, y_norm=0.15, confidence=0.98, is_visible=True),
+        "left_shoulder": PoseKeypoint2D(x_norm=0.60, y_norm=0.28, confidence=0.95, is_visible=True),
+        "right_shoulder": PoseKeypoint2D(x_norm=0.40, y_norm=0.28, confidence=0.95, is_visible=True),
+        "left_elbow": PoseKeypoint2D(x_norm=0.65, y_norm=0.40, confidence=0.90, is_visible=True),
+        "right_elbow": PoseKeypoint2D(x_norm=0.35, y_norm=0.40, confidence=0.90, is_visible=True),
+        "left_wrist": PoseKeypoint2D(x_norm=0.46, y_norm=0.38, confidence=0.95, is_visible=True),
+        "right_wrist": PoseKeypoint2D(x_norm=0.54, y_norm=0.38, confidence=0.95, is_visible=True),
+        "left_hip": PoseKeypoint2D(x_norm=0.55, y_norm=0.55, confidence=0.95, is_visible=True),
+        "right_hip": PoseKeypoint2D(x_norm=0.45, y_norm=0.55, confidence=0.95, is_visible=True),
+        "left_knee": PoseKeypoint2D(x_norm=0.55, y_norm=0.72, confidence=0.95, is_visible=True),
+        "right_knee": PoseKeypoint2D(x_norm=0.45, y_norm=0.72, confidence=0.95, is_visible=True),
+        "left_ankle": PoseKeypoint2D(x_norm=0.55, y_norm=0.90, confidence=0.95, is_visible=True),
+        "right_ankle": PoseKeypoint2D(x_norm=0.45, y_norm=0.90, confidence=0.95, is_visible=True),
+    }
+    pose_res = PoseEstimationResult(
+        bounding_box=BoundingBox2D(x_min=0.30, y_min=0.10, x_max=0.70, y_max=0.95),
+        keypoints=kps,
+        confidence_score=0.95,
+        model_name="YOLOv8-Pose",
+    )
+
+    meta = {
+        "square_dim": 800,
+        "offset": [50, 50],
+        "crop_pixels": [250, 50, 850, 950],
+        "original_image_size": [1000, 1000],
+    }
+
+    fitted_pose, fitted_shape, fitted_cam, metrics = fitter.fit(
+        init_pose=init_pose,
+        init_shape=init_shape,
+        init_cam=init_cam,
+        pose_result=pose_res,
+        transform_meta=meta,
+        quality_preset="high",
+    )
+
+    with torch.no_grad():
+        v = smpl(fitted_pose, fitted_shape)
+        j = torch.matmul(smpl.J_regressor, v).numpy()
+        # Wrists: Joint 20 (L wrist) and Joint 21 (R wrist)
+        wrist_dist = float(np.linalg.norm(j[20] - j[21]))
+        # Crossed arms have wrists within 0.35m of each other
+        assert wrist_dist < 0.35
+
+
+# ---------------------------------------------------------------------------
+# 18. Body Shape Variation Conditioning
+# ---------------------------------------------------------------------------
+def test_body_shape_variation_conditioning():
+    smpl_path = Path("data/models/human_reconstruction/SMPL_N_model.npz")
+    mean_path = Path("data/models/human_reconstruction/smpl_mean_params.npz")
+    if not smpl_path.exists() or not mean_path.exists():
+        pytest.skip("SMPL model files not present in data/models/human_reconstruction")
+
+    from app.pipeline.reconstructor import SMPLForwardLayer
+
+    npz_data = np.load(smpl_path, allow_pickle=True)
+    smpl = SMPLForwardLayer(npz_data)
+    mean_data = np.load(mean_path)
+    init_pose = torch.tensor(mean_data["pose"], dtype=torch.float32).unsqueeze(0)
+
+    # Generate two distinct body shapes using beta PCA components
+    betas_slender = torch.zeros(10, dtype=torch.float32)
+    betas_slender[0] = -2.5  # Slender / narrower build
+
+    betas_heavy = torch.zeros(10, dtype=torch.float32)
+    betas_heavy[0] = 3.0   # Broader / heavier build
+
+    with torch.no_grad():
+        v_slender = smpl(init_pose, betas_slender).numpy()
+        v_heavy = smpl(init_pose, betas_heavy).numpy()
+
+    # Verify that different shape betas produce genuinely distinct geometry
+    diff = np.abs(v_slender - v_heavy).max()
+    assert diff > 0.05  # More than 5cm difference in vertex positions
+
+    # Width along X should be wider for heavy than slender
+    width_slender = v_slender[:, 0].max() - v_slender[:, 0].min()
+    width_heavy = v_heavy[:, 0].max() - v_heavy[:, 0].min()
+    assert width_heavy > width_slender
+
+
+# ---------------------------------------------------------------------------
+# 19. Quality Presets Control Optimization
+# ---------------------------------------------------------------------------
+def test_quality_presets_control_optimization():
+    rec = MockHumanReconstructor(device="cpu")
+    img = np.zeros((200, 200, 3), dtype=np.uint8)
+    box = BoundingBox2D(x_min=0.1, y_min=0.1, x_max=0.9, y_max=0.9)
+
+    res_prev = rec.reconstruct(img, box, quality_preset="preview")
+    res_high = rec.reconstruct(img, box, quality_preset="high")
+    res_max = rec.reconstruct(img, box, quality_preset="maximum")
+
+    assert res_prev.quality_preset == "preview"
+    assert res_high.quality_preset == "high"
+    assert res_max.quality_preset == "maximum"
+    assert res_max.reprojection_error_pixels < res_prev.reprojection_error_pixels
+    assert res_max.silhouette_iou > res_prev.silhouette_iou
+
+
+# ---------------------------------------------------------------------------
+# 20. Source-Aligned Validation Metrics
+# ---------------------------------------------------------------------------
+def test_source_aligned_validation_metrics():
+    rec_data = HumanReconstructionData(
+        status="ready",
+        mesh_asset_id="mesh-001",
+        quality_score=0.91,
+        quality_preset="high",
+        reprojection_error_pixels=2.45,
+        reprojection_error_normalized=0.021,
+        silhouette_iou=0.865,
+    )
+
+    assert rec_data.reprojection_error_pixels == 2.45
+    assert rec_data.reprojection_error_normalized == 0.021
+    assert rec_data.silhouette_iou == 0.865
+    assert rec_data.quality_preset == "high"
+
+    # JSON roundtrip preserves metrics
+    data_json = rec_data.model_dump_json()
+    reloaded = HumanReconstructionData.model_validate_json(data_json)
+    assert reloaded.reprojection_error_pixels == 2.45
+    assert reloaded.silhouette_iou == 0.865
+
+
+# ---------------------------------------------------------------------------
+# 21. Reconstruction Pipeline Resequencing Integration
+# ---------------------------------------------------------------------------
+@pytest.mark.asyncio
+async def test_reconstruction_pipeline_resequencing_integration(tmp_path):
+    from app.pipeline.mock import MockPersonDetector, MockPersonSegmentor, MockDepthEstimator
+    from app.pipeline.reconstructor import MockHumanReconstructor
+    from app.scene.manager import scene_manager
+    from app.jobs.tracker import job_tracker
+
+    coord = PipelineCoordinator(
+        detector=MockPersonDetector(),
+        segmentor=MockPersonSegmentor(),
+        depth_estimator=MockDepthEstimator(),
+        reconstructor=MockHumanReconstructor(),
+    )
+
+    from app.assets.manager import asset_manager
+
+    # Create scene with registered photo asset
+    img = Image.new("RGB", (640, 480), color=(128, 128, 128))
+    buf = io.BytesIO()
+    img.save(buf, format="JPEG")
+    photo_bytes = buf.getvalue()
+
+    photo_asset = asset_manager.register_photo(
+        content=photo_bytes,
+        filename="test_resequence.jpg",
+        mime_type="image/jpeg",
+    )
+    scene = scene_manager.create_scene_from_photo(photo_asset, name="Resequence Pipeline Test")
+    job_id = job_tracker.create_job(scene_id=scene.id)
+
+    res_scene = await coord.execute_pipeline(
+        scene_id=scene.id,
+        job_id=job_id,
+        confidence_threshold=0.3,
+        include_depth=True,
+        include_reconstruction=True,
+    )
+
+    assert res_scene.processing_status == "ready"
+    assert len(res_scene.entities) > 0
+    for e in res_scene.entities:
+        assert e.reconstruction is not None
+        assert e.reconstruction.status == "ready"
+        assert e.reconstruction.reprojection_error_pixels is not None
+        assert e.reconstruction.silhouette_iou is not None
+        assert e.skeleton is not None
+        assert e.skeleton.validation_status == "valid"
+

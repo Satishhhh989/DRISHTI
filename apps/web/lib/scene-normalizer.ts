@@ -62,6 +62,11 @@ export function normalizeEntity(e: any): SceneEntity {
     meshAssetId: rawRecon.meshAssetId ?? rawRecon.mesh_asset_id ?? null,
     meshUrl: rawRecon.meshUrl ?? rawRecon.mesh_url ?? rawRecon.meshUri ?? rawRecon.mesh_uri ?? null,
     textureAvailability: rawRecon.textureAvailability ?? rawRecon.texture_availability ?? "none",
+    qualityScore: rawRecon.qualityScore ?? rawRecon.quality_score,
+    qualityPreset: rawRecon.qualityPreset ?? rawRecon.quality_preset ?? "high",
+    reprojectionErrorPixels: rawRecon.reprojectionErrorPixels ?? rawRecon.reprojection_error_pixels,
+    reprojectionErrorNormalized: rawRecon.reprojectionErrorNormalized ?? rawRecon.reprojection_error_normalized,
+    silhouetteIou: rawRecon.silhouetteIou ?? rawRecon.silhouette_iou,
   } : undefined;
 
   const rawPlacement = e.placement;
