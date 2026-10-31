@@ -67,6 +67,12 @@ export const CinematicSceneDirector: React.FC = () => {
   const entities = currentScene?.entities || [];
   const totalEntities = entities.length;
 
+  // Detect user preference for reduced motion
+  const prefersReducedMotion = useMemo(() => {
+    if (typeof window === "undefined" || !window.matchMedia) return false;
+    return window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  }, []);
+
   // Sync real backend events into cinematic timeline stages
   useEffect(() => {
     if (!isAnalyzing) return;
@@ -155,11 +161,16 @@ export const CinematicSceneDirector: React.FC = () => {
     // STAGE 1: Original Photograph & Introduction
     // -------------------------------------------------------------
     if (currentStageId === "stage_photo") {
-      // Subtle push-in toward photograph: from (0, 1.0, 3.6) to (0, 1.0, 3.1)
-      const t = Math.min(1.0, stageTime / 2.5);
-      const ease = THREE.MathUtils.smoothstep(t, 0, 1);
-      cameraTargetRef.current.pos.set(0, 1.0, 3.6 - 0.5 * ease);
-      cameraTargetRef.current.look.set(0, 1.0, 0);
+      if (prefersReducedMotion) {
+        cameraTargetRef.current.pos.set(0, 1.0, 3.2);
+        cameraTargetRef.current.look.set(0, 1.0, 0);
+      } else {
+        // Subtle push-in toward photograph: from (0, 1.0, 3.6) to (0, 1.0, 3.1)
+        const t = Math.min(1.0, stageTime / 2.5);
+        const ease = THREE.MathUtils.smoothstep(t, 0, 1);
+        cameraTargetRef.current.pos.set(0, 1.0, 3.6 - 0.5 * ease);
+        cameraTargetRef.current.look.set(0, 1.0, 0);
+      }
 
       // Auto-advance if not waiting for real backend
       if (!isAnalyzing && stageTime > 2.5) {
@@ -188,7 +199,7 @@ export const CinematicSceneDirector: React.FC = () => {
         const entity = entities[curIdx];
         const box = entity?.boundingBox || entity?.detection?.boundingBox;
 
-        if (box && curIdx < totalEntities) {
+        if (box && curIdx < totalEntities && !prefersReducedMotion) {
           // Focus camera toward current person's region on the photo plane
           const boxCenterX = ((box.xMin + box.xMax) / 2 - 0.5) * width;
           const boxCenterY = centerY + (0.5 - (box.yMin + box.yMax) / 2) * height;
@@ -259,11 +270,16 @@ export const CinematicSceneDirector: React.FC = () => {
     // STAGE 5: Spatial Photograph (Perspective depth relief)
     // -------------------------------------------------------------
     else if (currentStageId === "stage_spatial_photo") {
-      // Orbit to 25-degree perspective to reveal real depth displacement
-      const t = Math.min(1.0, stageTime / 2.0);
-      const angle = 0.45 * Math.sin(t * Math.PI * 0.5);
-      cameraTargetRef.current.pos.set(Math.sin(angle) * 3.2, 1.05, Math.cos(angle) * 3.2);
-      cameraTargetRef.current.look.set(0, 1.0, 0);
+      if (prefersReducedMotion) {
+        cameraTargetRef.current.pos.set(0.4, 1.05, 3.1);
+        cameraTargetRef.current.look.set(0, 1.0, 0);
+      } else {
+        // Orbit to 25-degree perspective to reveal real depth displacement
+        const t = Math.min(1.0, stageTime / 2.0);
+        const angle = 0.45 * Math.sin(t * Math.PI * 0.5);
+        cameraTargetRef.current.pos.set(Math.sin(angle) * 3.2, 1.05, Math.cos(angle) * 3.2);
+        cameraTargetRef.current.look.set(0, 1.0, 0);
+      }
 
       if (!isAnalyzing && stageTime > 2.8) {
         updateStageStatus("stage_spatial_photo", "completed", { progress: 1.0 });
@@ -279,10 +295,15 @@ export const CinematicSceneDirector: React.FC = () => {
     else if (currentStageId === "stage_wireframe") {
       const lift = Math.min(1.0, stageTime / 2.2);
       setWireframeLiftProgress(lift);
-      // Gentle orbit framing the lifting wireframes
-      const angle = 0.25 * Math.sin(stageTime * 0.8);
-      cameraTargetRef.current.pos.set(Math.sin(angle) * 3.4, 1.15, Math.cos(angle) * 3.4);
-      cameraTargetRef.current.look.set(0, 1.0, 0);
+      if (prefersReducedMotion) {
+        cameraTargetRef.current.pos.set(0, 1.15, 3.4);
+        cameraTargetRef.current.look.set(0, 1.0, 0);
+      } else {
+        // Gentle orbit framing the lifting wireframes
+        const angle = 0.25 * Math.sin(stageTime * 0.8);
+        cameraTargetRef.current.pos.set(Math.sin(angle) * 3.4, 1.15, Math.cos(angle) * 3.4);
+        cameraTargetRef.current.look.set(0, 1.0, 0);
+      }
 
       if (!isAnalyzing && stageTime > 3.0) {
         updateStageStatus("stage_wireframe", "completed", { progress: 1.0 });
@@ -346,7 +367,7 @@ export const CinematicSceneDirector: React.FC = () => {
     }
 
     // Smooth camera interpolation
-    camera.position.lerp(cameraTargetRef.current.pos, 0.08);
+    camera.position.lerp(cameraTargetRef.current.pos, prefersReducedMotion ? 0.25 : 0.08);
     camera.lookAt(cameraTargetRef.current.look);
   });
 
