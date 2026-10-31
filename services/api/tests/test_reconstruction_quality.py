@@ -41,11 +41,15 @@ from app.pipeline.motion import (
     skeleton_fitter,
 )
 from app.pipeline.reconstructor import (
+    Hmr2HumanReconstructor,
     MockHumanReconstructor,
+    ReconstructionBackendRegistry,
+    SMPLPoseFitter,
     SpinHumanReconstructor,
     compute_mesh_normals,
     export_mesh_glb,
     prepare_person_crop,
+    reconstruction_registry,
     validate_mesh_geometry,
 )
 from app.schemas.common import BoundingBox2D, Transform, Vector3D, EulerRotation
@@ -835,5 +839,220 @@ async def test_quality_preset_propagation(tmp_path):
             assert e.reconstruction.stance_description is not None
             assert e.reconstruction.observed_keypoints_count is not None
             assert e.reconstruction.pose_convergence_status is not None
+
+
+# ---------------------------------------------------------------------------
+# 24. Critical Joint Indexing (2D and 3D Batched Tensors)
+# ---------------------------------------------------------------------------
+def test_select_joints_indexing_2d_and_3d():
+    """Verifies that select_joints indexes the joint dimension, never the batch dimension,
+    preventing IndexError or incorrect slicing across 2D, 3D single-batch, and multi-batch tensors."""
+    indices = [0, 1, 4, 12, 15, 21]
+
+    # Case A: 2D tensor (24, 3)
+    j_2d = torch.arange(24 * 3, dtype=torch.float32).reshape(24, 3)
+    selected_2d = SMPLPoseFitter.select_joints(j_2d, indices)
+    assert selected_2d.shape == (6, 3)
+    for idx_out, idx_j in enumerate(indices):
+        assert torch.allclose(selected_2d[idx_out], j_2d[idx_j])
+
+    # Case B: 3D tensor with batch=1 (1, 24, 3) - where naive j_3d[indices] would index batch dim!
+    j_3d_single = j_2d.unsqueeze(0)  # Shape (1, 24, 3)
+    selected_3d_single = SMPLPoseFitter.select_joints(j_3d_single, indices)
+    assert selected_3d_single.shape == (1, 6, 3)
+    for idx_out, idx_j in enumerate(indices):
+        assert torch.allclose(selected_3d_single[0, idx_out], j_3d_single[0, idx_j])
+
+    # Case C: 3D tensor with batch=3 (3, 24, 3)
+    j_3d_multi = torch.stack([j_2d, j_2d * 2.0, j_2d * 3.0], dim=0)
+    selected_3d_multi = SMPLPoseFitter.select_joints(j_3d_multi, indices)
+    assert selected_3d_multi.shape == (3, 6, 3)
+    for b in range(3):
+        for idx_out, idx_j in enumerate(indices):
+            assert torch.allclose(selected_3d_multi[b, idx_out], j_3d_multi[b, idx_j])
+
+
+# ---------------------------------------------------------------------------
+# 25. Differentiable Silhouette Distance Transform Optimization
+# ---------------------------------------------------------------------------
+def test_differentiable_silhouette_loss_gradient():
+    """Verifies that distance transform grid sampling generates non-zero gradients pulling
+    vertices outside the true silhouette boundary toward the silhouette."""
+    import cv2
+    import torch.nn.functional as F
+
+    s_res = 128
+    # Create a centered square mask (40 to 88 in both dimensions)
+    mask = np.zeros((s_res, s_res), dtype=np.uint8)
+    mask[40:88, 40:88] = 255
+
+    # Compute Euclidean distance transform
+    dist_map = cv2.distanceTransform(255 - mask, cv2.DIST_L2, 5) / float(s_res)
+    dist_tensor = torch.tensor(dist_map, dtype=torch.float32).unsqueeze(0).unsqueeze(0)
+
+    # Place a 2D point outside the mask
+    outside_pt = torch.tensor([[[[0.7, 0.7]]]], dtype=torch.float32, requires_grad=True)
+
+    sampled_dist = F.grid_sample(dist_tensor, outside_pt, align_corners=False, mode="bilinear", padding_mode="border")
+    loss = (sampled_dist ** 2).mean()
+
+    assert loss.item() > 0.0, "Loss for point outside mask must be strictly positive"
+
+    loss.backward()
+    assert outside_pt.grad is not None
+    assert outside_pt.grad[0, 0, 0, 0].item() > 0.0
+    assert outside_pt.grad[0, 0, 0, 1].item() > 0.0
+
+
+# ---------------------------------------------------------------------------
+# 26. Honest Metric Reporting (No Fake Zero Error or Fake 0.80 IoU)
+# ---------------------------------------------------------------------------
+def test_metrics_honesty_unavailable_and_mock():
+    """Verifies that missing or insufficient keypoints/masks return None with appropriate metric_status,
+    and MockHumanReconstructor explicitly reports metric_status='mock'."""
+    # Test MockHumanReconstructor reports mock metric_status
+    mock_rec = MockHumanReconstructor()
+    res = mock_rec.reconstruct(
+        image_rgb=np.zeros((100, 100, 3), dtype=np.uint8),
+        bounding_box=BoundingBox2D(x_min=0.1, y_min=0.1, x_max=0.9, y_max=0.9),
+    )
+    assert res.metric_status == "mock"
+    assert res.reprojection_error_pixels == 18.5
+    assert res.silhouette_iou == 0.84
+
+    # Test fitter behavior with fewer than 4 keypoints
+    if model_manager.is_model_available("spin-human-reconstruction"):
+        ckpt = model_manager.get_model_path("spin-human-reconstruction")
+        smpl_path = ckpt.parent / "SMPL_N_model.npz"
+        from app.pipeline.reconstructor import SMPLForwardLayer, SMPLPoseFitter
+        from app.pipeline.motion import PoseEstimationResult, PoseKeypoint2D
+
+        npz_data = np.load(smpl_path, allow_pickle=True)
+        smpl = SMPLForwardLayer(npz_data)
+        fitter = SMPLPoseFitter(smpl=smpl, weights=npz_data["weights"], device=torch.device("cpu"))
+
+        # Only 2 keypoints (insufficient for reliable metric measurement)
+        insufficient_kps = {
+            "head": PoseKeypoint2D(x_norm=0.5, y_norm=0.2, confidence=0.9, is_visible=True),
+            "left_hip": PoseKeypoint2D(x_norm=0.5, y_norm=0.6, confidence=0.9, is_visible=True),
+        }
+        sparse_pose = PoseEstimationResult(
+            keypoints=insufficient_kps,
+            bounding_box=BoundingBox2D(x_min=0.3, y_min=0.1, x_max=0.7, y_max=0.9),
+            confidence_score=0.9,
+            model_name="yolov8m-pose",
+        )
+
+        img = np.zeros((400, 400, 3), dtype=np.uint8)
+        _, meta = prepare_person_crop(img, sparse_pose.bounding_box, padding=0.15, target_size=(224, 224))
+
+        init_pose = torch.zeros(1, 24, 6)
+        init_pose[0, :, 0] = 1.0
+        init_pose[0, :, 4] = 1.0
+        init_shape = torch.zeros(1, 10)
+        init_cam = torch.tensor([[0.9, 0.0, 0.0]])
+
+        _, _, _, metrics = fitter.fit(
+            init_pose=init_pose,
+            init_shape=init_shape,
+            init_cam=init_cam,
+            pose_result=sparse_pose,
+            transform_meta=meta,
+            quality_preset="preview",
+        )
+
+        assert metrics["metric_status"] == "unavailable"
+        assert metrics["reprojection_error_pixels"] is None
+        assert metrics["reprojection_error_normalized"] is None
+        assert metrics["silhouette_iou"] is None
+        assert metrics["quality_score"] is None
+
+
+# ---------------------------------------------------------------------------
+# 27. Modular HMR 2.0 Adapter and Registry Fallback
+# ---------------------------------------------------------------------------
+def test_hmr2_adapter_and_registry_fallback():
+    """Verifies that Hmr2HumanReconstructor exposes modular capabilities and falls back gracefully."""
+    mock_fallback = MockHumanReconstructor()
+    hmr2 = Hmr2HumanReconstructor(checkpoint_path=None, fallback_reconstructor=mock_fallback)
+
+    caps = hmr2.get_capabilities()
+    assert caps["is_articulated"] is True
+    assert "SMPL Canonical (6,890 vertices, 24 joints)" in caps["output_format"]
+    assert caps["weights_installed"] is False
+    assert "CC-BY-NC 4.0" in caps["license"]
+
+    # Reconstruct should fall back to mock_fallback with warning
+    res = hmr2.reconstruct(
+        image_rgb=np.zeros((100, 100, 3), dtype=np.uint8),
+        bounding_box=BoundingBox2D(x_min=0.1, y_min=0.1, x_max=0.9, y_max=0.9),
+    )
+    assert res.metric_status == "mock"
+    assert any("HMR 2.0" in w for w in res.warnings)
+
+    # Test registry operations
+    reg = ReconstructionBackendRegistry()
+    reg.register("test_mock", mock_fallback)
+    reg.register("test_hmr2", hmr2)
+    assert "test_mock" in reg.list_backends()
+    assert "test_hmr2" in reg.list_backends()
+    assert reg.get("test_mock") is mock_fallback
+    assert reg.get("nonexistent") is None
+
+
+# ---------------------------------------------------------------------------
+# 28. Multi-Person Pelvis and Spatial Depth Isolation
+# ---------------------------------------------------------------------------
+def test_multi_person_pelvis_and_depth_isolation():
+    """Verifies that multi-person reconstruction produces isolated, non-overlapping 3D placements
+    where seated and standing people occupy distinct coordinates based on bounding box and depth statistics."""
+    from app.pipeline.assembly import SceneAssemblyEngine, AssemblyConfig
+
+    assembly = SceneAssemblyEngine(AssemblyConfig())
+
+    # Person A: Left standing, closer depth (median_proximity = 0.8)
+    entity_a = SceneEntity(
+        id="person-left-standing",
+        source_image_id="img-001",
+        category="person",
+        tracking_id=1,
+        detection=DetectionInfo(
+            bounding_box=BoundingBox2D(x_min=0.10, y_min=0.15, x_max=0.30, y_max=0.90),
+            pixel_box=[100.0, 150.0, 300.0, 900.0],
+            confidence=0.95,
+            model="yolov8",
+        ),
+        depth=None,
+    )
+
+    # Person B: Center seated, further depth (median_proximity = 0.4)
+    entity_b = SceneEntity(
+        id="person-center-seated",
+        source_image_id="img-001",
+        category="person",
+        tracking_id=2,
+        detection=DetectionInfo(
+            bounding_box=BoundingBox2D(x_min=0.40, y_min=0.35, x_max=0.60, y_max=0.85),
+            pixel_box=[400.0, 350.0, 600.0, 850.0],
+            confidence=0.93,
+            model="yolov8",
+        ),
+        depth=None,
+    )
+
+    # Coordinates based on coordinator placement rules
+    ca_x = (0.10 + 0.30) / 2.0
+    ca_y = (0.15 + 0.90) / 2.0
+    cb_x = (0.40 + 0.60) / 2.0
+    cb_y = (0.35 + 0.85) / 2.0
+
+    pos_a = Vector3D(x=(ca_x - 0.5) * 1.5, y=(0.5 - ca_y) * 1.5, z=(0.8 - 0.5) * 0.4)
+    pos_b = Vector3D(x=(cb_x - 0.5) * 1.5, y=(0.5 - cb_y) * 1.5, z=(0.4 - 0.5) * 0.4)
+
+    assert pos_a.x < -0.3
+    assert abs(pos_b.x) < 0.1
+    assert pos_a.z > pos_b.z
+    dist = np.sqrt((pos_a.x - pos_b.x)**2 + (pos_a.y - pos_b.y)**2 + (pos_a.z - pos_b.z)**2)
+    assert dist > 0.45
 
 

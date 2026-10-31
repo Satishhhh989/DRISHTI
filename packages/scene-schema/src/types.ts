@@ -212,6 +212,7 @@ export interface HumanReconstructionData {
   textureAvailability: "none" | "partial" | "full";
   qualityScore?: number;
   qualityPreset?: "preview" | "high" | "maximum";
+  metricStatus?: "measured" | "estimated" | "unavailable" | "mock";
   reprojectionErrorPixels?: number;
   reprojectionErrorNormalized?: number;
   silhouetteIou?: number;

@@ -64,6 +64,7 @@ export function normalizeEntity(e: any): SceneEntity {
     textureAvailability: rawRecon.textureAvailability ?? rawRecon.texture_availability ?? "none",
     qualityScore: rawRecon.qualityScore ?? rawRecon.quality_score,
     qualityPreset: rawRecon.qualityPreset ?? rawRecon.quality_preset ?? "high",
+    metricStatus: rawRecon.metricStatus ?? rawRecon.metric_status,
     reprojectionErrorPixels: rawRecon.reprojectionErrorPixels ?? rawRecon.reprojection_error_pixels,
     reprojectionErrorNormalized: rawRecon.reprojectionErrorNormalized ?? rawRecon.reprojection_error_normalized,
     silhouetteIou: rawRecon.silhouetteIou ?? rawRecon.silhouette_iou,

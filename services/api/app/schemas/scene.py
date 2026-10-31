@@ -199,6 +199,7 @@ class HumanReconstructionData(BaseModel):
     texture_availability: Literal["none", "partial", "full"] = "none"
     quality_score: Optional[float] = None
     quality_preset: Optional[str] = "high"
+    metric_status: Optional[str] = None
     reprojection_error_pixels: Optional[float] = None
     reprojection_error_normalized: Optional[float] = None
     silhouette_iou: Optional[float] = None

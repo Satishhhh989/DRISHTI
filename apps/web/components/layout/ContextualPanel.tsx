@@ -844,27 +844,60 @@ export const ContextualPanel: React.FC = () => {
                     </span>
                   </div>
                 )}
-                {selectedEntity.reconstruction.reprojectionErrorPixels !== undefined && (
+                {selectedEntity.reconstruction.metricStatus && (
                   <div className={styles.propRow}>
-                    <span className={styles.propLabel}>Reproj Error</span>
-                    <span className={styles.propValue} style={{ color: "#10b981" }}>
-                      {selectedEntity.reconstruction.reprojectionErrorPixels.toFixed(1)} px
+                    <span className={styles.propLabel}>Metric Status</span>
+                    <span
+                      className={styles.propValue}
+                      style={{
+                        fontSize: "10px",
+                        textTransform: "uppercase",
+                        color:
+                          selectedEntity.reconstruction.metricStatus === "measured"
+                            ? "#10b981"
+                            : selectedEntity.reconstruction.metricStatus === "estimated"
+                            ? "#f59e0b"
+                            : selectedEntity.reconstruction.metricStatus === "mock"
+                            ? "#8b5cf6"
+                            : "#9ca3af",
+                      }}
+                      data-testid="reconstruction-metric-status"
+                    >
+                      {selectedEntity.reconstruction.metricStatus}
                     </span>
                   </div>
                 )}
-                {selectedEntity.reconstruction.silhouetteIou !== undefined && (
-                  <div className={styles.propRow}>
-                    <span className={styles.propLabel}>Silhouette IoU</span>
-                    <span className={styles.propValue}>
-                      {(selectedEntity.reconstruction.silhouetteIou * 100).toFixed(1)}%
-                    </span>
-                  </div>
-                )}
+                <div className={styles.propRow}>
+                  <span className={styles.propLabel}>Reproj Error</span>
+                  <span
+                    className={styles.propValue}
+                    style={{
+                      color:
+                        selectedEntity.reconstruction.reprojectionErrorPixels != null
+                          ? "#10b981"
+                          : "#9ca3af",
+                    }}
+                  >
+                    {selectedEntity.reconstruction.reprojectionErrorPixels != null
+                      ? `${selectedEntity.reconstruction.reprojectionErrorPixels.toFixed(1)} px`
+                      : "Unavailable"}
+                  </span>
+                </div>
+                <div className={styles.propRow}>
+                  <span className={styles.propLabel}>Silhouette IoU</span>
+                  <span className={styles.propValue}>
+                    {selectedEntity.reconstruction.silhouetteIou != null
+                      ? `${(selectedEntity.reconstruction.silhouetteIou * 100).toFixed(1)}%`
+                      : "Unavailable"}
+                  </span>
+                </div>
                 {selectedEntity.reconstruction.qualityScore !== undefined && (
                   <div className={styles.propRow}>
                     <span className={styles.propLabel}>Quality Score</span>
                     <span className={styles.propValue}>
-                      {(selectedEntity.reconstruction.qualityScore * 100).toFixed(1)}%
+                      {selectedEntity.reconstruction.qualityScore != null
+                        ? `${(selectedEntity.reconstruction.qualityScore * 100).toFixed(1)}%`
+                        : "Unavailable"}
                     </span>
                   </div>
                 )}

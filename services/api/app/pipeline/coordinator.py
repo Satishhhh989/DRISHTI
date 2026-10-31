@@ -131,22 +131,52 @@ class PipelineCoordinator:
         logger.warning("Depth Anything weights not found; falling back to MockDepthEstimator")
         return MockDepthEstimator()
 
-    def get_reconstructor(self) -> HumanReconstructor:
+    def get_reconstructor(self, backend: Optional[str] = None) -> HumanReconstructor:
         if self._reconstructor is not None:
             return self._reconstructor
+        from app.pipeline.reconstructor import (
+            Hmr2HumanReconstructor,
+            MockHumanReconstructor,
+            SpinHumanReconstructor,
+            reconstruction_registry,
+        )
+
+        backend_name = (backend or "spin").lower()
+        reg_backend = reconstruction_registry.get(backend_name)
+        if reg_backend is not None:
+            return reg_backend
+
+        device = device_manager.device
+        spin_reconstructor = None
         if model_manager.is_model_available("spin-human-reconstruction"):
             ckpt_path = model_manager.get_model_path("spin-human-reconstruction")
             smpl_path = ckpt_path.parent / "SMPL_N_model.npz"
             mean_path = ckpt_path.parent / "smpl_mean_params.npz"
-            device = device_manager.device
-            return SpinHumanReconstructor(
+            spin_reconstructor = SpinHumanReconstructor(
                 checkpoint_path=ckpt_path,
                 smpl_npz_path=smpl_path,
                 mean_params_path=mean_path,
                 device=device,
             )
+            reconstruction_registry.register("spin", spin_reconstructor)
+
+        if backend_name == "hmr2":
+            hmr2_path = model_manager.models_dir / "hmr2" / "epoch=35-step=1000000.ckpt"
+            hmr2_rec = Hmr2HumanReconstructor(
+                checkpoint_path=hmr2_path if hmr2_path.exists() else None,
+                device=device,
+                fallback_reconstructor=spin_reconstructor or MockHumanReconstructor(device=device),
+            )
+            reconstruction_registry.register("hmr2", hmr2_rec)
+            return hmr2_rec
+
+        if spin_reconstructor is not None:
+            return spin_reconstructor
+
         logger.warning("SPIN/SMPL weights not found; falling back to MockHumanReconstructor")
-        return MockHumanReconstructor(device=device_manager.device)
+        mock_rec = MockHumanReconstructor(device=device)
+        reconstruction_registry.register("mock", mock_rec)
+        return mock_rec
 
     async def execute_pipeline(
         self,
@@ -904,6 +934,7 @@ class PipelineCoordinator:
                                 stance_description=rec_result.stance_description,
                                 observed_keypoints_count=rec_result.observed_keypoints_count,
                                 pose_convergence_status=rec_result.pose_convergence_status,
+                                metric_status=rec_result.metric_status,
                                 warnings=rec_result.warnings,
                                 reconstructed_at=datetime.now(timezone.utc).isoformat(),
                             )
@@ -914,6 +945,16 @@ class PipelineCoordinator:
                             scene_manager.update_scene(scene)
 
                             # Emit asset_ready event for the reconstructed mesh
+                            reproj_text = (
+                                f"{rec_result.reprojection_error_pixels:.1f}px"
+                                if rec_result.reprojection_error_pixels is not None
+                                else "N/A"
+                            )
+                            iou_text = (
+                                f"{rec_result.silhouette_iou:.2f}"
+                                if rec_result.silhouette_iou is not None
+                                else "N/A"
+                            )
                             event_emitter.emit(
                                 job_id=job_id,
                                 scene_id=scene_id,
@@ -929,7 +970,7 @@ class PipelineCoordinator:
                                     mime_type="model/gltf-binary",
                                     size_bytes=mesh_asset.size_bytes,
                                 ),
-                                message=f"3D human mesh ready for {entity.id} ({idx} of {total_people}) [Reproj Error: {rec_result.reprojection_error_pixels:.1f}px, IoU: {rec_result.silhouette_iou:.2f}].",
+                                message=f"3D human mesh ready for {entity.id} ({idx} of {total_people}) [Reproj Error: {reproj_text}, IoU: {iou_text}].",
                             )
 
                         except Exception as person_rec_err:
@@ -938,6 +979,7 @@ class PipelineCoordinator:
                                 status="failed",
                                 error_message=str(person_rec_err),
                                 texture_availability="none",
+                                metric_status="unavailable",
                                 reconstructed_at=datetime.now(timezone.utc).isoformat(),
                             )
                             scene_manager.update_scene(scene)

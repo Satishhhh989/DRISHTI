@@ -80,6 +80,16 @@ MODEL_CATALOG: Dict[str, Dict[str, Any]] = {
         "license": "AGPL-3.0",
         "task": "pose",
     },
+    "hmr2": {
+        "dir_name": "hmr2",
+        "filename": "hmr2/epoch=35-step=1000000.ckpt",
+        "category": "human_reconstruction",
+        "description": "4DHumans / HMR 2.0 (ViT Backbone + SMPL Transformer Regressor)",
+        "size_mb": 2100.0,
+        "license": "Code: MIT; SMPL: CC-BY-NC 4.0 (Non-Commercial Research)",
+        "task": "human-mesh-recovery",
+        "download_info": "Download hmr2a.ckpt or epoch=35-step=1000000.ckpt from 4DHumans release into data/models/hmr2/",
+    },
 }
 
 
