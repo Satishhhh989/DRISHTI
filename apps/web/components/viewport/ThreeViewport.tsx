@@ -21,7 +21,6 @@ import styles from "./ThreeViewport.module.css";
 export const ThreeViewport: React.FC = () => {
   const [mounted, setMounted] = useState(false);
   const [isDragOver, setIsDragOver] = useState(false);
-  const [assemblyProgress, setAssemblyProgress] = useState(1.0);
 
   const localPhotoUrl = useSceneStore((state) => state.localPhotoUrl);
   const photoDimensions = useSceneStore((state) => state.photoDimensions);
@@ -194,7 +193,7 @@ export const ThreeViewport: React.FC = () => {
               <GridFloor />
 
               {/* 0. Real-time Live Reconstruction Presentation Controller */}
-              <LiveReconstructionController onAssemblyProgress={setAssemblyProgress} />
+              <LiveReconstructionController />
               <CinematicSceneDirector />
 
               {/* 1. Photographic plane rendered in 3D coordinate space (Photo / Inspection Modes) */}
@@ -226,7 +225,6 @@ export const ThreeViewport: React.FC = () => {
                       ? activeRepresentation
                       : "wireframe") as Unified3DMode
                   }
-                  presentationProgress={assemblyProgress}
                 />
               )}
 

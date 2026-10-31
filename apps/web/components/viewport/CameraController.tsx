@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useEffect, useRef } from "react";
+import * as THREE from "three";
 import { useThree } from "@react-three/fiber";
 import { OrbitControls } from "@react-three/drei";
 import { useUIStore } from "@/stores/ui-store";
@@ -159,6 +160,21 @@ export const CameraController: React.FC = () => {
   }, [focusEntityTrigger, selectedEntityId, currentScene, camera]);
 
   const isCinematicActive = useCinematicStore((state) => state.isCinematicActive);
+  const wasCinematicRef = useRef(false);
+
+  // Seamless camera handoff when cinematic animation completes:
+  // Align OrbitControls target with camera direction so there is zero orientation snap
+  useEffect(() => {
+    if (wasCinematicRef.current && !isCinematicActive && controlsRef.current) {
+      const dir = new THREE.Vector3();
+      camera.getWorldDirection(dir);
+      const dist = Math.min(4.0, Math.max(1.8, camera.position.z));
+      const targetPos = new THREE.Vector3().copy(camera.position).addScaledVector(dir, dist);
+      controlsRef.current.target.set(targetPos.x, Math.max(0.2, targetPos.y), targetPos.z);
+      controlsRef.current.update();
+    }
+    wasCinematicRef.current = isCinematicActive;
+  }, [isCinematicActive, camera]);
 
   return (
     <OrbitControls

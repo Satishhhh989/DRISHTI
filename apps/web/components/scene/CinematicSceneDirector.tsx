@@ -3,14 +3,8 @@
 import React, { useRef, useEffect, useMemo } from "react";
 import * as THREE from "three";
 import { useFrame, useThree } from "@react-three/fiber";
-import { Html } from "@react-three/drei";
-import {
-  CinematicStageId,
-  CINEMATIC_STAGES,
-  useCinematicStore,
-} from "@/stores/cinematic-store";
+import { useCinematicStore } from "@/stores/cinematic-store";
 import { useSceneStore } from "@/stores/scene-store";
-import { useUIStore } from "@/stores/ui-store";
 
 const PALETTE = [
   { hex: 0x3b82f6, css: "#3b82f6" }, // Blue
@@ -25,9 +19,10 @@ const PALETTE = [
  * CinematicSceneDirector
  *
  * Drives the 9-stage cinematic reconstruction sequence inside the 3D viewport:
- * - Coordinates camera positioning, smooth pans, and focal zooms per person
- * - Manages stage timing synchronized with real pipeline events
- * - Renders stage-specific visual indicators (framing reticles, detection tags, depth sweeps)
+ * - Fluid, frame-rate independent camera motion (damped interpolation with delta-time)
+ * - Zero per-frame React state re-renders (120fps stutter-free performance)
+ * - Stage timing synchronized with real backend pipeline events
+ * - Clear, elegant framing that shows the whole scene rather than jerky camera snaps
  */
 export const CinematicSceneDirector: React.FC = () => {
   const { camera } = useThree();
@@ -40,12 +35,6 @@ export const CinematicSceneDirector: React.FC = () => {
   const setCurrentStage = useCinematicStore((state) => state.setCurrentStage);
   const updateStageStatus = useCinematicStore((state) => state.updateStageStatus);
   const setActivePersonIndex = useCinematicStore((state) => state.setActivePersonIndex);
-  const setDepthWipeProgress = useCinematicStore((state) => state.setDepthWipeProgress);
-  const setWireframeLiftProgress = useCinematicStore((state) => state.setWireframeLiftProgress);
-  const setPersonExtractionProgress = useCinematicStore((state) => state.setPersonExtractionProgress);
-  const setSurfaceDissolveProgress = useCinematicStore((state) => state.setSurfaceDissolveProgress);
-  const setAssemblyProgress = useCinematicStore((state) => state.setAssemblyProgress);
-  const skipCinematic = useCinematicStore((state) => state.skipCinematic);
 
   const isAnalyzing = useSceneStore((state) => state.isAnalyzing);
   const backendStages = useSceneStore((state) => state.stages);
@@ -56,8 +45,9 @@ export const CinematicSceneDirector: React.FC = () => {
 
   const stageTimerRef = useRef(0);
   const personTimerRef = useRef(0);
+  const currentLookRef = useRef<THREE.Vector3>(new THREE.Vector3(0, 1.0, 0));
   const cameraTargetRef = useRef<{ pos: THREE.Vector3; look: THREE.Vector3 }>({
-    pos: new THREE.Vector3(0, 1.0, 3.2),
+    pos: new THREE.Vector3(0, 1.0, 3.25),
     look: new THREE.Vector3(0, 1.0, 0),
   });
 
@@ -69,7 +59,7 @@ export const CinematicSceneDirector: React.FC = () => {
   const entities = currentScene?.entities || [];
   const totalEntities = entities.length;
 
-  // Reset stage timers whenever active stage transitions
+  // Reset stage timer whenever active stage transitions
   useEffect(() => {
     stageTimerRef.current = 0;
     personTimerRef.current = 0;
@@ -85,7 +75,6 @@ export const CinematicSceneDirector: React.FC = () => {
   useEffect(() => {
     if (!isAnalyzing) return;
 
-    // Detect transition points from backend stages
     if (backendStages.person_detection?.status === "completed" && stages.stage_detection.status === "waiting") {
       updateStageStatus("stage_photo", "completed", { progress: 1.0 });
       setCurrentStage("stage_detection");
@@ -149,7 +138,6 @@ export const CinematicSceneDirector: React.FC = () => {
       updateStageStatus("stage_combined", "processing", {
         summary: "Multi-person scene assembly complete",
       });
-      // Finalize on wireframe representation as requested
       setTimeout(() => {
         updateStageStatus("stage_combined", "completed", { progress: 1.0 });
         useCinematicStore.getState().skipCinematic();
@@ -158,7 +146,7 @@ export const CinematicSceneDirector: React.FC = () => {
     }
   }, [backendStages, isAnalyzing, totalEntities, stages, updateStageStatus, setCurrentStage, setVisualizationMode]);
 
-  // Main Director Frame Loop
+  // Main Director Frame Loop: Frame-Rate Independent, Damped Interpolation
   useFrame((_, delta) => {
     if (!isCinematicActive || isPaused) return;
 
@@ -166,130 +154,99 @@ export const CinematicSceneDirector: React.FC = () => {
     const stageTime = stageTimerRef.current;
 
     // -------------------------------------------------------------
-    // STAGE 1: Original Photograph & Introduction
+    // STAGE 1: Original Photograph (Dignified framing & soft push-in)
     // -------------------------------------------------------------
     if (currentStageId === "stage_photo") {
-      if (prefersReducedMotion) {
-        cameraTargetRef.current.pos.set(0, 1.0, 3.2);
+      if (!prefersReducedMotion) {
+        const t = Math.min(1.0, stageTime / 2.2);
+        const ease = THREE.MathUtils.smoothstep(t, 0, 1);
+        cameraTargetRef.current.pos.set(0, 1.0, 3.4 - 0.25 * ease);
         cameraTargetRef.current.look.set(0, 1.0, 0);
       } else {
-        // Subtle push-in toward photograph: from (0, 1.0, 3.6) to (0, 1.0, 3.1)
-        const t = Math.min(1.0, stageTime / 2.5);
-        const ease = THREE.MathUtils.smoothstep(t, 0, 1);
-        cameraTargetRef.current.pos.set(0, 1.0, 3.6 - 0.5 * ease);
+        cameraTargetRef.current.pos.set(0, 1.0, 3.2);
         cameraTargetRef.current.look.set(0, 1.0, 0);
       }
 
-      // Auto-advance if not waiting for real backend
-      if (!isAnalyzing && stageTime > 2.5) {
+      if (!isAnalyzing && stageTime > 2.0) {
         updateStageStatus("stage_photo", "completed", { progress: 1.0 });
         setCurrentStage("stage_detection");
         setVisualizationMode("detection");
-        stageTimerRef.current = 0;
-        personTimerRef.current = 0;
       }
     }
 
     // -------------------------------------------------------------
-    // STAGE 2: Person Detection (Individual candidate focus)
+    // STAGE 2: Person Detection (Steady wide frame, sequential pulse)
     // -------------------------------------------------------------
     else if (currentStageId === "stage_detection") {
-      personTimerRef.current += delta;
-      const pTime = personTimerRef.current;
-      const personDuration = 1.4;
+      // Keep camera steady so entire photo and all detections are clearly framed
+      cameraTargetRef.current.pos.set(0, 1.05, 3.15);
+      cameraTargetRef.current.look.set(0, 1.0, 0);
 
+      // Sequence highlight focus smoothly once per candidate
+      const personInterval = 0.8;
       if (totalEntities > 0) {
-        const curIdx = Math.min(totalEntities - 1, Math.floor(stageTime / personDuration));
-        if (curIdx !== activePersonIndex && curIdx < totalEntities) {
-          setActivePersonIndex(curIdx, totalEntities);
+        const nextPersonIdx = Math.min(totalEntities - 1, Math.floor(stageTime / personInterval));
+        if (nextPersonIdx !== activePersonIndex) {
+          setActivePersonIndex(nextPersonIdx, totalEntities);
         }
+      }
 
-        const entity = entities[curIdx];
-        const box = entity?.boundingBox || entity?.detection?.boundingBox;
-
-        if (box && curIdx < totalEntities && !prefersReducedMotion) {
-          // Focus camera toward current person's region on the photo plane
-          const boxCenterX = ((box.xMin + box.xMax) / 2 - 0.5) * width;
-          const boxCenterY = centerY + (0.5 - (box.yMin + box.yMax) / 2) * height;
-
-          cameraTargetRef.current.pos.set(boxCenterX * 0.45, boxCenterY * 0.45 + 0.5, 2.3);
-          cameraTargetRef.current.look.set(boxCenterX * 0.4, boxCenterY * 0.4 + 0.5, 0);
-        }
-
-        // Pull back after last person has been introduced
-        if (stageTime > totalEntities * personDuration) {
-          setActivePersonIndex(-1);
-          cameraTargetRef.current.pos.set(0, 1.0, 3.2);
-          cameraTargetRef.current.look.set(0, 1.0, 0);
-
-          if (!isAnalyzing && stageTime > totalEntities * personDuration + 1.2) {
-            updateStageStatus("stage_detection", "completed", {
-              progress: 1.0,
-              summary: `${totalEntities} people detected`,
-            });
-            setCurrentStage("stage_segmentation");
-            setVisualizationMode("segmentation");
-            stageTimerRef.current = 0;
-          }
-        }
-      } else if (!isAnalyzing && stageTime > 2.0) {
-        setCurrentStage("stage_depth");
-        setVisualizationMode("depth");
-        stageTimerRef.current = 0;
+      if (!isAnalyzing && stageTime > Math.max(2.0, totalEntities * personInterval + 0.6)) {
+        setActivePersonIndex(-1);
+        updateStageStatus("stage_detection", "completed", {
+          progress: 1.0,
+          summary: `${totalEntities} people detected`,
+        });
+        setCurrentStage("stage_segmentation");
+        setVisualizationMode("segmentation");
       }
     }
 
     // -------------------------------------------------------------
-    // STAGE 3: Segmentation (Contour silhouette reveal)
+    // STAGE 3: Segmentation (Silhouette contours illuminate)
     // -------------------------------------------------------------
     else if (currentStageId === "stage_segmentation") {
-      cameraTargetRef.current.pos.set(0, 1.0, 3.2);
+      cameraTargetRef.current.pos.set(0, 1.05, 3.15);
       cameraTargetRef.current.look.set(0, 1.0, 0);
 
-      if (!isAnalyzing && stageTime > 2.8) {
+      if (!isAnalyzing && stageTime > 1.8) {
         updateStageStatus("stage_segmentation", "completed", {
           progress: 1.0,
           summary: `Segmentation complete · ${totalEntities}/${totalEntities} people`,
         });
         setCurrentStage("stage_depth");
         setVisualizationMode("depth");
-        stageTimerRef.current = 0;
       }
     }
 
     // -------------------------------------------------------------
-    // STAGE 4: Depth Map (Smooth wipe sweep revealing depth field)
+    // STAGE 4: Depth Map (Laser scanning reveal)
     // -------------------------------------------------------------
     else if (currentStageId === "stage_depth") {
-      const wipe = Math.min(1.0, stageTime / 2.4);
-      setDepthWipeProgress(wipe);
-      cameraTargetRef.current.pos.set(0, 1.0, 3.2);
+      cameraTargetRef.current.pos.set(0, 1.05, 3.15);
       cameraTargetRef.current.look.set(0, 1.0, 0);
 
-      if (!isAnalyzing && stageTime > 2.8) {
+      if (!isAnalyzing && stageTime > 2.0) {
         updateStageStatus("stage_depth", "completed", { progress: 1.0 });
         setCurrentStage("stage_spatial_photo");
         setVisualizationMode("spatial_photo");
-        stageTimerRef.current = 0;
       }
     }
 
     // -------------------------------------------------------------
-    // STAGE 5: Spatial Photograph (Perspective depth relief)
+    // STAGE 5: Spatial Photograph (Gentle 12-degree perspective reveal)
     // -------------------------------------------------------------
     else if (currentStageId === "stage_spatial_photo") {
       if (prefersReducedMotion) {
-        cameraTargetRef.current.pos.set(0.35, 1.05, 3.1);
-        cameraTargetRef.current.look.set(0, 1.0, 0);
+        cameraTargetRef.current.pos.set(0.3, 1.05, 3.15);
       } else {
-        // Orbit to 18-degree perspective to reveal real depth displacement
         const t = Math.min(1.0, stageTime / 2.0);
-        const angle = 0.32 * Math.sin(t * Math.PI * 0.5);
-        cameraTargetRef.current.pos.set(Math.sin(angle) * 3.2, 1.05, Math.cos(angle) * 3.2);
-        cameraTargetRef.current.look.set(0, 1.0, 0);
+        const angle = 0.22 * Math.sin(t * Math.PI * 0.5);
+        cameraTargetRef.current.pos.set(Math.sin(angle) * 3.15, 1.05, Math.cos(angle) * 3.15);
       }
+      cameraTargetRef.current.look.set(0, 1.0, 0);
 
-      if (!isAnalyzing && stageTime > 2.8) {
+      if (!isAnalyzing && stageTime > 2.2) {
         updateStageStatus("stage_spatial_photo", "completed", { progress: 1.0 });
         setCurrentStage("stage_wireframe");
         setVisualizationMode("wireframe");
@@ -297,57 +254,14 @@ export const CinematicSceneDirector: React.FC = () => {
     }
 
     // -------------------------------------------------------------
-    // STAGE 6: Individual Wireframe Extraction (Per-person lift & topology)
+    // STAGE 6: Wireframe Extraction (Graceful forward lift off photo)
     // -------------------------------------------------------------
     else if (currentStageId === "stage_wireframe") {
-      const personDuration = 1.8;
-      const totalExtractionTime = Math.max(2.0, totalEntities * personDuration);
+      // Smoothly elevate camera into three-quarters perspective
+      cameraTargetRef.current.pos.set(0.2, 1.25, 3.3);
+      cameraTargetRef.current.look.set(0, 0.95, 0);
 
-      if (totalEntities > 0) {
-        const curIdx = Math.min(totalEntities - 1, Math.floor(stageTime / personDuration));
-        const personTime = stageTime - curIdx * personDuration;
-        const pProgress = Math.min(1.0, personTime / (personDuration * 0.7));
-
-        setPersonExtractionProgress(pProgress);
-
-        if (curIdx !== activePersonIndex && stageTime <= totalExtractionTime) {
-          setActivePersonIndex(curIdx, totalEntities);
-        }
-
-        const entity = entities[curIdx];
-        const box = entity?.boundingBox || entity?.detection?.boundingBox;
-
-        if (box && curIdx < totalEntities && stageTime <= totalExtractionTime && !prefersReducedMotion) {
-          const boxCenterX = ((box.xMin + box.xMax) / 2 - 0.5) * width;
-          const boxCenterY = centerY + (0.5 - (box.yMin + box.yMax) / 2) * height;
-
-          // Camera frames the extracting person and moves slightly to showcase 3D depth and volume
-          const angle = 0.12 * Math.sin(pProgress * Math.PI);
-          cameraTargetRef.current.pos.set(
-            boxCenterX * 0.35 + Math.sin(angle) * 0.8,
-            boxCenterY * 0.35 + 0.55,
-            2.3 + Math.cos(angle) * 0.3
-          );
-          cameraTargetRef.current.look.set(boxCenterX * 0.3, boxCenterY * 0.3 + 0.5, 0.2);
-        }
-
-        // Once all people have been extracted, pull back and frame all extracted wireframes
-        if (stageTime > totalExtractionTime) {
-          setActivePersonIndex(totalEntities); // Indicates all persons extracted
-          setPersonExtractionProgress(1.0);
-          setWireframeLiftProgress(1.0);
-
-          cameraTargetRef.current.pos.set(0, 1.15, 3.4);
-          cameraTargetRef.current.look.set(0, 1.0, 0);
-
-          if (!isAnalyzing && stageTime > totalExtractionTime + 1.2) {
-            updateStageStatus("stage_wireframe", "completed", { progress: 1.0 });
-            setCurrentStage("stage_solid3d");
-            setVisualizationMode("wireframe");
-            setActivePersonIndex(-1);
-          }
-        }
-      } else if (!isAnalyzing && stageTime > 2.5) {
+      if (!isAnalyzing && stageTime > 2.4) {
         updateStageStatus("stage_wireframe", "completed", { progress: 1.0 });
         setCurrentStage("stage_solid3d");
         setVisualizationMode("wireframe");
@@ -355,79 +269,80 @@ export const CinematicSceneDirector: React.FC = () => {
     }
 
     // -------------------------------------------------------------
-    // STAGE 7: 3D Mesh Inspection (Topology & geometry inspection)
+    // STAGE 7: 3D Wireframe Topology (Tracking shot across formation)
     // -------------------------------------------------------------
     else if (currentStageId === "stage_solid3d") {
-      const dissolve = Math.min(1.0, stageTime / 2.0);
-      setSurfaceDissolveProgress(dissolve);
-      cameraTargetRef.current.pos.set(0.15, 1.15, 3.5);
-      cameraTargetRef.current.look.set(0, 1.0, 0);
+      // Slow, luxurious tracking shot
+      cameraTargetRef.current.pos.set(-0.15, 1.22, 3.25);
+      cameraTargetRef.current.look.set(0, 0.95, 0.1);
 
-      if (!isAnalyzing && stageTime > 2.6) {
+      if (!isAnalyzing && stageTime > 2.0) {
         updateStageStatus("stage_solid3d", "completed", { progress: 1.0 });
         setCurrentStage("stage_articulation");
         setVisualizationMode("wireframe");
-        stageTimerRef.current = 0;
       }
     }
 
     // -------------------------------------------------------------
-    // STAGE 8: Articulation & Rigging (Skeleton joints illumination)
+    // STAGE 8: Articulation & Rigging (Skeletal joint illumination)
     // -------------------------------------------------------------
     else if (currentStageId === "stage_articulation") {
-      cameraTargetRef.current.pos.set(0.0, 1.1, 3.4);
-      cameraTargetRef.current.look.set(0, 1.0, 0);
+      cameraTargetRef.current.pos.set(0.0, 1.15, 3.25);
+      cameraTargetRef.current.look.set(0, 0.95, 0.15);
 
-      if (!isAnalyzing && stageTime > 2.8) {
+      if (!isAnalyzing && stageTime > 2.0) {
         updateStageStatus("stage_articulation", "completed", { progress: 1.0 });
         setCurrentStage("stage_combined");
         setVisualizationMode("wireframe");
-        stageTimerRef.current = 0;
       }
     }
 
     // -------------------------------------------------------------
-    // STAGE 9: Final Combined Scene (Step-forward into depth staging)
+    // STAGE 9: Combined Scene Assembly (Stepping into depth ground positions)
     // -------------------------------------------------------------
     else if (currentStageId === "stage_combined") {
-      const assemble = Math.min(1.0, stageTime / 1.8);
-      setAssemblyProgress(assemble);
+      // Graceful wide final framing
+      cameraTargetRef.current.pos.set(0.25, 1.3, 3.6);
+      cameraTargetRef.current.look.set(0, 1.0, 0.2);
 
-      // Reframe camera to complete wide composition
-      cameraTargetRef.current.pos.set(0.35, 1.35, 3.8);
-      cameraTargetRef.current.look.set(0, 1.0, 0.4);
-
-      if (assemble >= 1.0) {
+      if (!isAnalyzing && stageTime > 2.4) {
         updateStageStatus("stage_combined", "completed", { progress: 1.0 });
         setActiveRepresentation("wireframe");
         setVisualizationMode("wireframe");
-        // Handover smoothly to standard interactive viewport
         setTimeout(() => {
           useCinematicStore.getState().skipCinematic();
-        }, 800);
+        }, 500);
       }
     }
 
-    // Smooth camera interpolation
-    camera.position.lerp(cameraTargetRef.current.pos, prefersReducedMotion ? 0.25 : 0.08);
-    camera.lookAt(cameraTargetRef.current.look);
+    // -------------------------------------------------------------
+    // Frame-rate independent physics damping (100% fluid at 60/120Hz)
+    // -------------------------------------------------------------
+    const dampRate = prefersReducedMotion ? 6.0 : 3.8;
+    camera.position.x = THREE.MathUtils.damp(camera.position.x, cameraTargetRef.current.pos.x, dampRate, delta);
+    camera.position.y = THREE.MathUtils.damp(camera.position.y, cameraTargetRef.current.pos.y, dampRate, delta);
+    camera.position.z = THREE.MathUtils.damp(camera.position.z, cameraTargetRef.current.pos.z, dampRate, delta);
+
+    currentLookRef.current.x = THREE.MathUtils.damp(currentLookRef.current.x, cameraTargetRef.current.look.x, dampRate * 1.2, delta);
+    currentLookRef.current.y = THREE.MathUtils.damp(currentLookRef.current.y, cameraTargetRef.current.look.y, dampRate * 1.2, delta);
+    currentLookRef.current.z = THREE.MathUtils.damp(currentLookRef.current.z, cameraTargetRef.current.look.z, dampRate * 1.2, delta);
+
+    camera.lookAt(currentLookRef.current);
   });
 
-  // Reticles, framing outlines, and depth sweeps
   return (
     <group data-testid="cinematic-scene-director">
-      {/* Stage 1: Cinematic Corner Framing Reticles */}
+      {/* Stage 1: Framing Reticle */}
       {currentStageId === "stage_photo" && (
-        <group position={[0, centerY, 0.015]}>
-          {/* Subtle outer crop border */}
+        <group position={[0, centerY, 0.012]}>
           <lineSegments>
-            <edgesGeometry args={[new THREE.PlaneGeometry(width + 0.06, height + 0.06)]} />
-            <lineBasicMaterial color="#38bdf8" transparent opacity={0.4} />
+            <edgesGeometry args={[new THREE.PlaneGeometry(width + 0.04, height + 0.04)]} />
+            <lineBasicMaterial color="#38bdf8" transparent opacity={0.5} />
           </lineSegments>
         </group>
       )}
 
-      {/* Stage 2 & 3: Per-Person Detection Highlights */}
+      {/* Stage 2 & 3: Person Detection Highlights (Pure WebGL outlines) */}
       {(currentStageId === "stage_detection" || currentStageId === "stage_segmentation") &&
         entities.map((entity, idx) => {
           const box = entity.boundingBox || entity.detection?.boundingBox;
@@ -438,70 +353,24 @@ export const CinematicSceneDirector: React.FC = () => {
           const boxCenterX = ((box.xMin + box.xMax) / 2 - 0.5) * width;
           const boxCenterY = centerY + (0.5 - (box.yMin + box.yMax) / 2) * height;
 
-          const isActive = activePersonIndex === idx || activePersonIndex === -1;
           const isFocused = activePersonIndex === idx;
           const color = PALETTE[idx % PALETTE.length];
-          const confidencePct = entity.detection
-            ? Math.round(entity.detection.confidence * 100)
-            : entity.confidence?.detectionConfidence
-            ? Math.round(entity.confidence.detectionConfidence * 100)
-            : null;
 
           return (
-            <group key={`cinematic-det-${entity.id}`} position={[boxCenterX, boxCenterY, 0.018]}>
+            <group key={`cinematic-det-${entity.id}`} position={[boxCenterX, boxCenterY, 0.015]}>
               <lineSegments>
                 <edgesGeometry args={[new THREE.PlaneGeometry(boxWidth, boxHeight)]} />
                 <lineBasicMaterial
                   color={isFocused ? "#ffffff" : color.hex}
                   transparent
-                  opacity={isFocused ? 0.95 : isActive ? 0.5 : 0.2}
+                  opacity={isFocused ? 0.95 : 0.45}
                   linewidth={isFocused ? 2 : 1}
                   depthTest={false}
                 />
               </lineSegments>
-
-              {/* Temporary identification label for focused person */}
-              {currentStageId === "stage_detection" && isFocused && (
-                <Html
-                  position={[-boxWidth / 2, boxHeight / 2, 0]}
-                  style={{
-                    transform: "translate(0, -100%)",
-                    pointerEvents: "none",
-                    whiteSpace: "nowrap",
-                    userSelect: "none",
-                  }}
-                >
-                  <div
-                    style={{
-                      display: "inline-flex",
-                      alignItems: "center",
-                      gap: "6px",
-                      backgroundColor: "rgba(15, 15, 18, 0.92)",
-                      color: "#ffffff",
-                      border: "1px solid #38bdf8",
-                      borderRadius: "3px",
-                      padding: "2px 6px",
-                      fontSize: "10px",
-                      fontWeight: 600,
-                      letterSpacing: "0.04em",
-                      boxShadow: "0 2px 8px rgba(0,0,0,0.5)",
-                    }}
-                  >
-                    <span style={{ color: "#38bdf8" }}>
-                      PERSON {String(idx + 1).padStart(2, "0")}
-                    </span>
-                    {confidencePct && (
-                      <span style={{ color: "#94a3b8", fontSize: "9px" }}>
-                        {confidencePct}%
-                      </span>
-                    )}
-                  </div>
-                </Html>
-              )}
             </group>
           );
         })}
     </group>
   );
 };
-

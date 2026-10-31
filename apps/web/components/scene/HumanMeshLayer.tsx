@@ -17,7 +17,6 @@ interface HumanMeshProps {
   mode: Unified3DMode;
   isSelected: boolean;
   onSelect: () => void;
-  presentationProgress?: number;
 }
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000";
@@ -79,31 +78,37 @@ export const SkeletonOverlay: React.FC<SkeletonOverlayProps> = ({
     return geom;
   }, [skeleton, baseJointMap]);
 
+  const hasInitializedRestRef = useRef(false);
+
   // Real-time skeletal joint articulation in sync with procedural clips
   useFrame(() => {
     if (!entity?.animationState?.isPlaying || !animTimeRef) {
-      // Rest pose: restore exact canonical joint coordinates
-      baseJointMap.forEach((coords, jId) => {
-        const mesh = jointMeshesRef.current.get(jId);
-        if (mesh) {
-          mesh.position.set(coords[0], coords[1], coords[2]);
-        }
-      });
-      if (lineGeometryRef.current && skeleton.bones.length > 0) {
-        const posAttr = lineGeometryRef.current.attributes.position as THREE.BufferAttribute;
-        if (posAttr) {
-          let idx = 0;
-          for (const bone of skeleton.bones) {
-            const p1 = baseJointMap.get(bone.headJointId) || [0, 0, 0];
-            const p2 = baseJointMap.get(bone.tailJointId) || [0, 0, 0];
-            posAttr.setXYZ(idx++, p1[0], p1[1], p1[2]);
-            posAttr.setXYZ(idx++, p2[0], p2[1], p2[2]);
+      if (!hasInitializedRestRef.current) {
+        // Rest pose: restore exact canonical joint coordinates once
+        baseJointMap.forEach((coords, jId) => {
+          const mesh = jointMeshesRef.current.get(jId);
+          if (mesh) {
+            mesh.position.set(coords[0], coords[1], coords[2]);
           }
-          posAttr.needsUpdate = true;
+        });
+        if (lineGeometryRef.current && skeleton.bones.length > 0) {
+          const posAttr = lineGeometryRef.current.attributes.position as THREE.BufferAttribute;
+          if (posAttr) {
+            let idx = 0;
+            for (const bone of skeleton.bones) {
+              const p1 = baseJointMap.get(bone.headJointId) || [0, 0, 0];
+              const p2 = baseJointMap.get(bone.tailJointId) || [0, 0, 0];
+              posAttr.setXYZ(idx++, p1[0], p1[1], p1[2]);
+              posAttr.setXYZ(idx++, p2[0], p2[1], p2[2]);
+            }
+            posAttr.needsUpdate = true;
+          }
         }
+        hasInitializedRestRef.current = true;
       }
       return;
     }
+    hasInitializedRestRef.current = false;
 
     const t = animTimeRef.current;
     const stanceDesc = (entity.reconstruction?.stanceDescription || "").toLowerCase();
@@ -262,11 +267,10 @@ export const SkeletonOverlay: React.FC<SkeletonOverlayProps> = ({
 
 const SingleHumanMesh: React.FC<HumanMeshProps> = ({
   entity,
-  entityIndex,
+  entityIndex = 0,
   mode,
   isSelected,
   onSelect,
-  presentationProgress,
 }) => {
   const [modelGroup, setModelGroup] = useState<THREE.Group | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -275,15 +279,12 @@ const SingleHumanMesh: React.FC<HumanMeshProps> = ({
   const animTimeRef = useRef(0);
   const activeMeshRef = useRef<THREE.Mesh | null>(null);
   const originalPositionsRef = useRef<Float32Array | null>(null);
+  const isPositionInitializedRef = useRef(false);
 
   const photoDimensions = useSceneStore((state) => state.photoDimensions);
   const isAnalyzing = useSceneStore((state) => state.isAnalyzing);
   const isCinematicActive = useCinematicStore((state) => state.isCinematicActive);
   const currentStageId = useCinematicStore((state) => state.currentStageId);
-  const activePersonIndex = useCinematicStore((state) => state.activePersonIndex);
-  const personExtractionProgress = useCinematicStore((state) => state.personExtractionProgress);
-  const wireframeLiftProgress = useCinematicStore((state) => state.wireframeLiftProgress);
-  const surfaceDissolveProgress = useCinematicStore((state) => state.surfaceDissolveProgress);
 
   const isEffectiveWireframe =
     mode === "wireframe" ||
@@ -325,7 +326,7 @@ const SingleHumanMesh: React.FC<HumanMeshProps> = ({
     };
   }, [meshUrl, entity.id]);
 
-  // Update materials and cache original pristine vertex coordinates
+  // Update materials smoothly in-place without garbage collection churn
   useEffect(() => {
     if (!modelGroup) return;
 
@@ -343,27 +344,51 @@ const SingleHumanMesh: React.FC<HumanMeshProps> = ({
         const wireColor = isSelected ? "#38bdf8" : "#94a3b8";
         const fallbackClayColor = "#cbd5e1"; // Neutral matte studio clay
 
-        mesh.material = new THREE.MeshStandardMaterial({
-          color: isWireframe
-            ? new THREE.Color(wireColor)
-            : hasVertexColors
-            ? new THREE.Color(0xffffff)
-            : new THREE.Color(fallbackClayColor),
-          vertexColors: !isWireframe && hasVertexColors,
-          wireframe: isWireframe,
-          roughness: 0.65,
-          metalness: 0.05,
-          side: THREE.DoubleSide,
-          transparent: isArticulated || isWireframe,
-          opacity: isWireframe ? 0.92 : isArticulated ? 0.72 : 1.0,
-          depthWrite: !isArticulated && !isWireframe,
-          emissive: isSelected
-            ? new THREE.Color("#2563eb")
-            : isWireframe
-            ? new THREE.Color("#0284c7")
-            : new THREE.Color(0x000000),
-          emissiveIntensity: isSelected ? 0.4 : isWireframe ? 0.18 : 0.0,
-        });
+        if (mesh.material instanceof THREE.MeshStandardMaterial) {
+          mesh.material.color.set(
+            isWireframe
+              ? wireColor
+              : hasVertexColors
+              ? "#ffffff"
+              : fallbackClayColor
+          );
+          mesh.material.vertexColors = !isWireframe && hasVertexColors;
+          mesh.material.wireframe = isWireframe;
+          mesh.material.transparent = isArticulated || isWireframe;
+          mesh.material.opacity = isWireframe ? 0.92 : isArticulated ? 0.72 : 1.0;
+          mesh.material.depthWrite = !isArticulated && !isWireframe;
+          mesh.material.emissive.set(
+            isSelected
+              ? "#2563eb"
+              : isWireframe
+              ? "#0284c7"
+              : "#000000"
+          );
+          mesh.material.emissiveIntensity = isSelected ? 0.4 : isWireframe ? 0.18 : 0.0;
+          mesh.material.needsUpdate = true;
+        } else {
+          mesh.material = new THREE.MeshStandardMaterial({
+            color: isWireframe
+              ? new THREE.Color(wireColor)
+              : hasVertexColors
+              ? new THREE.Color(0xffffff)
+              : new THREE.Color(fallbackClayColor),
+            vertexColors: !isWireframe && hasVertexColors,
+            wireframe: isWireframe,
+            roughness: 0.65,
+            metalness: 0.05,
+            side: THREE.DoubleSide,
+            transparent: isArticulated || isWireframe,
+            opacity: isWireframe ? 0.92 : isArticulated ? 0.72 : 1.0,
+            depthWrite: !isArticulated && !isWireframe,
+            emissive: isSelected
+              ? new THREE.Color("#2563eb")
+              : isWireframe
+              ? new THREE.Color("#0284c7")
+              : new THREE.Color(0x000000),
+            emissiveIntensity: isSelected ? 0.4 : isWireframe ? 0.18 : 0.0,
+          });
+        }
       }
     });
   }, [modelGroup, isWireframe, isSelected, isArticulated]);
@@ -386,82 +411,69 @@ const SingleHumanMesh: React.FC<HumanMeshProps> = ({
       : [1, 1, 1];
   }, [rawScale]);
 
-  // Visual presentation position: handles Stage 6 (Individual Wireframe Lift) and Stage 9 (Assembly Step-Forward)
-  const visualPosition: [number, number, number] = useMemo(() => {
+  // Keyframe Anchor Positions: 2D Photo region vs. 3D Forward Lift vs. 3D Scene Assembly
+  const { photoPosition, liftPosition, assembledPosition } = useMemo(() => {
     const box = entity.boundingBox || entity.detection?.boundingBox;
     const planeH = 2.0;
     const planeW = planeH * (photoDimensions?.aspect ?? 1.5);
     const photoX = box ? ((box.xMin + box.xMax) / 2 - 0.5) * planeW : basePosition[0];
     const photoY = box ? planeH / 2 + (0.5 - (box.yMin + box.yMax) / 2) * planeH : basePosition[1];
 
-    // Stage 6: Wireframe Extraction (Individual person lift away from photograph)
-    if (isCinematicActive && currentStageId === "stage_wireframe") {
-      let lift = 1.0;
-      if (entityIndex !== undefined && activePersonIndex >= 0) {
-        if (entityIndex > activePersonIndex) {
-          lift = 0.0;
-        } else if (entityIndex === activePersonIndex) {
-          lift = THREE.MathUtils.smoothstep(personExtractionProgress, 0.0, 1.0);
-        } else {
-          lift = 1.0;
-        }
-      } else {
-        lift = THREE.MathUtils.smoothstep(wireframeLiftProgress, 0.0, 1.0);
-      }
-      return [photoX, photoY, lift * 0.65];
-    }
+    return {
+      photoPosition: [photoX, photoY, 0.0] as [number, number, number],
+      liftPosition: [photoX, photoY, 0.65] as [number, number, number],
+      assembledPosition: basePosition,
+    };
+  }, [entity.boundingBox, entity.detection, photoDimensions, basePosition]);
 
-    // Stage 7: 3D Solid Mesh (Hovering in front of photo during progressive surface shading)
-    if (isCinematicActive && currentStageId === "stage_solid3d") {
-      return [photoX, photoY, 0.65];
-    }
-
-    // Stage 8: Articulation & Rigging (Hovering during skeleton illumination)
-    if (isCinematicActive && currentStageId === "stage_articulation") {
-      return [photoX, photoY, 0.65];
-    }
-
-    // Stage 9: Assembly Step-Forward into depth staging
-    if (
-      (presentationProgress !== undefined && presentationProgress < 1.0) ||
-      (isCinematicActive && currentStageId === "stage_combined")
-    ) {
-      const t = THREE.MathUtils.smoothstep(presentationProgress ?? 1.0, 0.0, 1.0);
-      return [
-        photoX + (basePosition[0] - photoX) * t,
-        photoY + (basePosition[1] - photoY) * t,
-        0.0 + (basePosition[2] - 0.0) * t,
-      ];
-    }
-
-    return basePosition;
-  }, [
-    basePosition,
-    presentationProgress,
-    entity.boundingBox,
-    entity.detection,
-    photoDimensions,
-    isCinematicActive,
-    currentStageId,
-    entityIndex,
-    activePersonIndex,
-    personExtractionProgress,
-    wireframeLiftProgress,
-  ]);
-
-  const isVisibleInStage6 =
+  const isVisibleInStage =
     !isCinematicActive ||
-    currentStageId !== "stage_wireframe" ||
-    entityIndex === undefined ||
-    activePersonIndex < 0 ||
-    entityIndex <= activePersonIndex;
+    (currentStageId === "stage_wireframe" ||
+      currentStageId === "stage_solid3d" ||
+      currentStageId === "stage_articulation" ||
+      currentStageId === "stage_combined");
 
-  // Procedural articulation & skeletal deformation loop
+  // Procedural articulation, skeletal deformation & butter-smooth delta damped movement
   useFrame((_, delta) => {
     if (!groupRef.current) return;
 
-    // Anchor the root group position at visualPosition (no artificial whole-person bobbing or wandering)
-    groupRef.current.position.set(visualPosition[0], visualPosition[1], visualPosition[2]);
+    // 1. Determine target spatial coordinates
+    let targetPos = assembledPosition;
+    if (isCinematicActive) {
+      if (
+        currentStageId === "stage_photo" ||
+        currentStageId === "stage_detection" ||
+        currentStageId === "stage_segmentation" ||
+        currentStageId === "stage_depth" ||
+        currentStageId === "stage_spatial_photo"
+      ) {
+        targetPos = photoPosition;
+      } else if (
+        currentStageId === "stage_wireframe" ||
+        currentStageId === "stage_solid3d" ||
+        currentStageId === "stage_articulation"
+      ) {
+        targetPos = liftPosition;
+      } else if (currentStageId === "stage_combined") {
+        targetPos = assembledPosition;
+      }
+    }
+
+    // Initialize root position directly on photo plane before lift begins (prevents origin jump)
+    if (!isPositionInitializedRef.current) {
+      groupRef.current.position.set(photoPosition[0], photoPosition[1], photoPosition[2]);
+      isPositionInitializedRef.current = true;
+    }
+
+    // 2. High-precision frame-rate independent smooth damping (60Hz / 120Hz ProMotion fluid)
+    const dampSpeed = isCinematicActive ? 5.0 : 9.0;
+    groupRef.current.position.x = THREE.MathUtils.damp(groupRef.current.position.x, targetPos[0], dampSpeed, delta);
+    groupRef.current.position.y = THREE.MathUtils.damp(groupRef.current.position.y, targetPos[1], dampSpeed, delta);
+    groupRef.current.position.z = THREE.MathUtils.damp(groupRef.current.position.z, targetPos[2], dampSpeed, delta);
+
+    groupRef.current.rotation.set(0, 0, 0);
+    groupRef.current.scale.set(baseScale[0], baseScale[1], baseScale[2]);
+    groupRef.current.visible = isVisibleInStage;
     groupRef.current.rotation.set(0, 0, 0);
     groupRef.current.scale.set(baseScale[0], baseScale[1], baseScale[2]);
 
@@ -584,13 +596,13 @@ const SingleHumanMesh: React.FC<HumanMeshProps> = ({
         posAttr.needsUpdate = true;
       }
     } else {
-      // Stopped / Rest pose / Reset: restore exact canonical photograph reconstructed pose!
-      if (originalPositionsRef.current && activeMeshRef.current?.geometry?.attributes?.position) {
+      // Stopped / Rest pose / Reset: restore exact canonical photograph reconstructed pose only once
+      if (animTimeRef.current !== 0 && originalPositionsRef.current && activeMeshRef.current?.geometry?.attributes?.position) {
         const posAttr = activeMeshRef.current.geometry.attributes.position;
         (posAttr.array as Float32Array).set(originalPositionsRef.current);
         posAttr.needsUpdate = true;
+        animTimeRef.current = 0;
       }
-      animTimeRef.current = 0;
     }
   });
 
@@ -606,8 +618,6 @@ const SingleHumanMesh: React.FC<HumanMeshProps> = ({
   return (
     <group
       ref={groupRef}
-      visible={isVisibleInStage6}
-      position={visualPosition}
       scale={baseScale}
       onClick={(e: { stopPropagation: () => void }) => {
         e.stopPropagation();
@@ -681,8 +691,7 @@ const UnreconstructedEntityIndicator: React.FC<UnreconstructedProps> = ({
 
 export const HumanMeshLayer: React.FC<{
   mode: Unified3DMode;
-  presentationProgress?: number;
-}> = ({ mode, presentationProgress }) => {
+}> = ({ mode }) => {
   const entities = useSceneStore((state) => state.currentScene?.entities || []);
   const selectedEntityId = useUIStore((state) => state.selectedEntityId);
   const selectEntity = useUIStore((state) => state.selectEntity);
@@ -724,7 +733,6 @@ export const HumanMeshLayer: React.FC<{
           mode={mode}
           isSelected={selectedEntityId === entity.id}
           onSelect={() => selectEntity(entity.id)}
-          presentationProgress={presentationProgress}
         />
       ))}
 

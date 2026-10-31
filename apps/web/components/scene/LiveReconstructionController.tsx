@@ -1,14 +1,9 @@
 "use client";
 
-import React, { useRef, useMemo, useEffect } from "react";
+import React, { useRef } from "react";
 import * as THREE from "three";
-import { useFrame, useThree } from "@react-three/fiber";
+import { useFrame } from "@react-three/fiber";
 import { useSceneStore } from "@/stores/scene-store";
-import { Unified3DMode } from "./HumanMeshLayer";
-
-interface LiveReconstructionControllerProps {
-  onAssemblyProgress?: (progress: number) => void;
-}
 
 const PALETTE = [
   { hex: 0x3b82f6, css: "#3b82f6" }, // Blue
@@ -22,29 +17,18 @@ const PALETTE = [
 /**
  * LiveReconstructionController
  *
- * Orchestrates real-time 3D presentation transitions during pipeline execution:
+ * Renders real-time visual telemetry during neural pipeline execution:
  * 1. Ingestion/Detection scanline laser sweep across the photograph
  * 2. 3D detection bounding box reveals as persons are located
- * 3. Progressive mesh materialization as individual human reconstructions finish
- * 4. Smooth scene assembly forward translation into estimated depth staging
- * 5. Gentle camera reframing and auto-transition to interactive 3D Combined scene
  */
-export const LiveReconstructionController: React.FC<LiveReconstructionControllerProps> = ({
-  onAssemblyProgress,
-}) => {
-  const { camera } = useThree();
-
+export const LiveReconstructionController: React.FC = () => {
   const isAnalyzing = useSceneStore((state) => state.isAnalyzing);
   const stages = useSceneStore((state) => state.stages);
   const currentScene = useSceneStore((state) => state.currentScene);
   const photoDimensions = useSceneStore((state) => state.photoDimensions);
-  const activeRepresentation = useSceneStore((state) => state.activeRepresentation);
-  const setActiveRepresentation = useSceneStore((state) => state.setActiveRepresentation);
 
   const scanlineRef = useRef<THREE.Mesh>(null);
-  const assemblyProgressRef = useRef(1.0);
-  const cameraTransitionRef = useRef(0.0);
-  const hasAutoTransitionedRef = useRef(false);
+  const scanPhaseRef = useRef(0.0);
 
   // Plane dimensions (matches PhotoPlane.tsx canonical sizing)
   const height = 2.0;
@@ -57,69 +41,15 @@ export const LiveReconstructionController: React.FC<LiveReconstructionController
       stages.person_detection.status === "running" ||
       stages.image_validation?.status === "running");
 
-  const isAssemblyStage =
-    stages.scene_assembly?.status === "running" ||
-    stages.scene_assembly?.status === "completed" ||
-    (isAnalyzing && stages.mesh_rigging?.status === "completed");
-
-  const isPipelineComplete =
-    !isAnalyzing &&
-    Boolean(
-      currentScene?.entities?.some(
-        (e) => e.reconstruction?.status === "ready" && Boolean(e.reconstruction?.meshUrl)
-      )
-    );
-
-  // Trigger assembly step-forward when assembly stage begins
-  useEffect(() => {
-    if (isAssemblyStage && assemblyProgressRef.current >= 1.0 && !hasAutoTransitionedRef.current) {
-      assemblyProgressRef.current = 0.0;
-      cameraTransitionRef.current = 0.0;
-    }
-  }, [isAssemblyStage]);
-
-  // Frame animation loop
+  // Frame animation loop: pure Three.js updates with zero React state churn
   useFrame((_, delta) => {
-    // 1. Ingestion Laser Scanline Animation
     if (scanlineRef.current && isScanning) {
-      const t = Date.now() * 0.002;
-      const scanY = centerY + Math.sin(t) * (height / 2 - 0.05);
+      scanPhaseRef.current += delta * 2.0;
+      const scanY = centerY + Math.sin(scanPhaseRef.current) * (height / 2 - 0.05);
       scanlineRef.current.position.y = scanY;
       scanlineRef.current.visible = true;
     } else if (scanlineRef.current) {
       scanlineRef.current.visible = false;
-    }
-
-    // 2. Scene Assembly Step-Forward Interpolation
-    if (assemblyProgressRef.current < 1.0) {
-      assemblyProgressRef.current = Math.min(1.0, assemblyProgressRef.current + delta * 0.85);
-      const ease = THREE.MathUtils.smoothstep(assemblyProgressRef.current, 0.0, 1.0);
-      if (onAssemblyProgress) {
-        onAssemblyProgress(ease);
-      }
-
-      // Smooth camera orbit / reframe to showcase depth
-      if (cameraTransitionRef.current < 1.0) {
-        cameraTransitionRef.current = Math.min(1.0, cameraTransitionRef.current + delta * 0.7);
-        const camEase = THREE.MathUtils.smoothstep(cameraTransitionRef.current, 0.0, 1.0);
-        // Gently reframe camera to an elevated three-quarters angle to reveal spatial depth
-        const targetX = 0.35 * camEase;
-        const targetY = 1.0 + 0.3 * camEase;
-        const targetZ = 3.2 + 0.6 * camEase;
-        camera.position.set(
-          THREE.MathUtils.lerp(camera.position.x, targetX, 0.08),
-          THREE.MathUtils.lerp(camera.position.y, targetY, 0.08),
-          THREE.MathUtils.lerp(camera.position.z, targetZ, 0.08)
-        );
-      }
-
-      // Auto-transition to Wireframe representation once step-forward completes
-      if (assemblyProgressRef.current >= 1.0 && !hasAutoTransitionedRef.current) {
-        hasAutoTransitionedRef.current = true;
-        if (activeRepresentation === "photo" || activeRepresentation === "combined") {
-          setActiveRepresentation("wireframe");
-        }
-      }
     }
   });
 

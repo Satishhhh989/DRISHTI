@@ -1,7 +1,8 @@
 "use client";
 
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useRef } from "react";
 import * as THREE from "three";
+import { useFrame } from "@react-three/fiber";
 import { useSceneStore } from "@/stores/scene-store";
 import { useCinematicStore } from "@/stores/cinematic-store";
 import { assetCache } from "@/lib/asset-cache";
@@ -39,7 +40,31 @@ export const PhotoPlane: React.FC<PhotoPlaneProps> = ({
 
   const isCinematicActive = useCinematicStore((state) => state.isCinematicActive);
   const currentStageId = useCinematicStore((state) => state.currentStageId);
-  const depthWipeProgress = useCinematicStore((state) => state.depthWipeProgress);
+
+  const wipeMeshRef = useRef<THREE.Mesh>(null);
+  const laserRef = useRef<THREE.Mesh>(null);
+  const wipeProgressRef = useRef(0.0);
+
+  // Smooth frame-rate independent depth reveal wipe
+  useFrame((_, delta) => {
+    if (isCinematicActive && currentStageId === "stage_depth" && depthVisTexture) {
+      wipeProgressRef.current = Math.min(1.0, wipeProgressRef.current + delta * 0.48);
+      const p = THREE.MathUtils.smoothstep(wipeProgressRef.current, 0, 1);
+      if (wipeMeshRef.current) {
+        wipeMeshRef.current.visible = true;
+        wipeMeshRef.current.scale.x = Math.max(0.001, p);
+        wipeMeshRef.current.position.x = -width / 2 + (width * p) / 2;
+      }
+      if (laserRef.current) {
+        laserRef.current.visible = p < 1.0;
+        laserRef.current.position.x = -width / 2 + width * p;
+      }
+    } else {
+      wipeProgressRef.current = 0.0;
+      if (wipeMeshRef.current) wipeMeshRef.current.visible = false;
+      if (laserRef.current) laserRef.current.visible = false;
+    }
+  });
 
   // 1. Load original photo texture via unified assetCache
   useEffect(() => {
@@ -119,9 +144,7 @@ export const PhotoPlane: React.FC<PhotoPlaneProps> = ({
             <planeGeometry args={[width, height]} />
             <meshBasicMaterial
               map={
-                !isReferencePlane &&
-                (visualizationMode === "depth" || (isCinematicActive && currentStageId === "stage_depth" && depthWipeProgress >= 1.0)) &&
-                depthVisTexture
+                !isReferencePlane && visualizationMode === "depth" && depthVisTexture
                   ? depthVisTexture
                   : photoTexture
               }
@@ -133,10 +156,10 @@ export const PhotoPlane: React.FC<PhotoPlaneProps> = ({
           </mesh>
 
           {/* Depth Wipe Transition Layer (Stage 4) */}
-          {!isReferencePlane && isCinematicActive && currentStageId === "stage_depth" && depthWipeProgress > 0 && depthWipeProgress < 1.0 && depthVisTexture && (
+          {!isReferencePlane && isCinematicActive && currentStageId === "stage_depth" && depthVisTexture && (
             <>
-              <mesh position={[-width / 2 + (width * depthWipeProgress) / 2, 0, 0.003]}>
-                <planeGeometry args={[Math.max(0.01, width * depthWipeProgress), height]} />
+              <mesh ref={wipeMeshRef} position={[0, 0, 0.003]} visible={false}>
+                <planeGeometry args={[width, height]} />
                 <meshBasicMaterial
                   map={depthVisTexture}
                   side={THREE.DoubleSide}
@@ -146,7 +169,7 @@ export const PhotoPlane: React.FC<PhotoPlaneProps> = ({
                 />
               </mesh>
               {/* Laser Wipe Leading Edge */}
-              <mesh position={[-width / 2 + width * depthWipeProgress, 0, 0.006]}>
+              <mesh ref={laserRef} position={[0, 0, 0.006]} visible={false}>
                 <planeGeometry args={[0.02, height]} />
                 <meshBasicMaterial
                   color="#38bdf8"
