@@ -277,6 +277,7 @@ const SingleHumanMesh: React.FC<HumanMeshProps> = ({
   const originalPositionsRef = useRef<Float32Array | null>(null);
 
   const photoDimensions = useSceneStore((state) => state.photoDimensions);
+  const isAnalyzing = useSceneStore((state) => state.isAnalyzing);
   const isCinematicActive = useCinematicStore((state) => state.isCinematicActive);
   const currentStageId = useCinematicStore((state) => state.currentStageId);
   const activePersonIndex = useCinematicStore((state) => state.activePersonIndex);
@@ -286,9 +287,8 @@ const SingleHumanMesh: React.FC<HumanMeshProps> = ({
 
   const isEffectiveWireframe =
     mode === "wireframe" ||
-    (isCinematicActive &&
-      (currentStageId === "stage_wireframe" ||
-        (currentStageId === "stage_solid3d" && surfaceDissolveProgress < 0.85)));
+    isCinematicActive ||
+    isAnalyzing;
 
   const isWireframe = isEffectiveWireframe;
   const isArticulated = mode === "articulated" || (isCinematicActive && currentStageId === "stage_articulation");
@@ -340,7 +340,7 @@ const SingleHumanMesh: React.FC<HumanMeshProps> = ({
         }
 
         const hasVertexColors = Boolean(mesh.geometry?.attributes?.color);
-        const wireColor = isSelected ? "#60a5fa" : "#94a3b8";
+        const wireColor = isSelected ? "#38bdf8" : "#94a3b8";
         const fallbackClayColor = "#cbd5e1"; // Neutral matte studio clay
 
         mesh.material = new THREE.MeshStandardMaterial({
@@ -354,11 +354,15 @@ const SingleHumanMesh: React.FC<HumanMeshProps> = ({
           roughness: 0.65,
           metalness: 0.05,
           side: THREE.DoubleSide,
-          transparent: isArticulated,
-          opacity: isArticulated ? 0.72 : 1.0,
-          depthWrite: !isArticulated,
-          emissive: isSelected ? new THREE.Color("#2563eb") : new THREE.Color(0x000000),
-          emissiveIntensity: isSelected ? 0.35 : 0.0,
+          transparent: isArticulated || isWireframe,
+          opacity: isWireframe ? 0.92 : isArticulated ? 0.72 : 1.0,
+          depthWrite: !isArticulated && !isWireframe,
+          emissive: isSelected
+            ? new THREE.Color("#2563eb")
+            : isWireframe
+            ? new THREE.Color("#0284c7")
+            : new THREE.Color(0x000000),
+          emissiveIntensity: isSelected ? 0.4 : isWireframe ? 0.18 : 0.0,
         });
       }
     });

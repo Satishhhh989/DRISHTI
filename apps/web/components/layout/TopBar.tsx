@@ -8,6 +8,7 @@ import { useCinematicStore } from "@/stores/cinematic-store";
 import { useProjectStore } from "@/stores/project-store";
 import { useUIStore } from "@/stores/ui-store";
 import { apiClient } from "@/lib/api-client";
+import { executeReconstruction } from "@/lib/reconstruction";
 import styles from "./TopBar.module.css";
 
 export const TopBar: React.FC = () => {
@@ -57,64 +58,7 @@ export const TopBar: React.FC = () => {
   );
 
   const handleReconstructScene = async () => {
-    if (!currentScene && !localPhotoUrl) {
-      setError("Please upload a photograph first.");
-      return;
-    }
-
-    // Replay presentation if already reconstructed and not analyzing
-    if (hasReconstructedMeshes && !isAnalyzing) {
-      useCinematicStore.getState().startCinematic();
-      return;
-    }
-
-    if (currentScene && !currentScene.id.startsWith("local-")) {
-      try {
-        useCinematicStore.getState().startCinematic();
-        setAnalysisState(true, "Initializing neural reconstruction pipeline...", 0.05);
-        setError(null);
-        setStatusNotice("Reconstructing scene (Detection, Segmentation, Depth, HMR 2.0)...");
-
-        const job = await apiClient.triggerAnalysis(currentScene.id, 0.35, false, true, qualityPreset);
-        setAnalysisState(true, "Job accepted by engine", 0.08, job.job_id);
-
-        apiClient.subscribeToJobEvents(
-          job.job_id,
-          0,
-          (ev) => {
-            applyEvent(ev);
-            if (ev.message) {
-              setStatusNotice(ev.message);
-            }
-          },
-          async () => {
-            try {
-              const refreshed = await apiClient.getScene(currentScene.id);
-              reconcileAuthoritativeScene(refreshed);
-              useCinematicStore.getState().updateStageStatus("stage_combined", "completed", { progress: 1.0 });
-              setStatusNotice(
-                refreshed.entities.length > 0
-                  ? `Reconstruction complete: ${refreshed.entities.length} people identified & reconstructed.`
-                  : "Reconstruction complete: No people detected."
-              );
-            } catch {
-              // Ignore refresh error
-            }
-          },
-          (err) => {
-            console.warn("Event stream error:", err);
-          }
-        );
-      } catch (err: unknown) {
-        const msg = err instanceof Error ? err.message : "Reconstruction failed";
-        setError(msg);
-        setAnalysisState(false, null, 0);
-        useCinematicStore.getState().skipCinematic();
-      }
-    } else {
-      // Local preview or mock mode
-      useCinematicStore.getState().startCinematic();
-    }
+    await executeReconstruction();
   };
 
   // Initialize project if scene loads and no project active

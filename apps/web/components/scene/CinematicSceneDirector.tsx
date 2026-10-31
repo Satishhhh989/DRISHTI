@@ -149,11 +149,11 @@ export const CinematicSceneDirector: React.FC = () => {
       updateStageStatus("stage_combined", "processing", {
         summary: "Multi-person scene assembly complete",
       });
-      // Finalize
+      // Finalize on wireframe representation as requested
       setTimeout(() => {
         updateStageStatus("stage_combined", "completed", { progress: 1.0 });
         useCinematicStore.getState().skipCinematic();
-        setVisualizationMode("combined");
+        setVisualizationMode("wireframe");
       }, 2000);
     }
   }, [backendStages, isAnalyzing, totalEntities, stages, updateStageStatus, setCurrentStage, setVisualizationMode]);
@@ -343,19 +343,19 @@ export const CinematicSceneDirector: React.FC = () => {
           if (!isAnalyzing && stageTime > totalExtractionTime + 1.2) {
             updateStageStatus("stage_wireframe", "completed", { progress: 1.0 });
             setCurrentStage("stage_solid3d");
-            setVisualizationMode("solid3d");
+            setVisualizationMode("wireframe");
             setActivePersonIndex(-1);
           }
         }
       } else if (!isAnalyzing && stageTime > 2.5) {
         updateStageStatus("stage_wireframe", "completed", { progress: 1.0 });
         setCurrentStage("stage_solid3d");
-        setVisualizationMode("solid3d");
+        setVisualizationMode("wireframe");
       }
     }
 
     // -------------------------------------------------------------
-    // STAGE 7: 3D Solid Mesh (Surface shading & vertex colors)
+    // STAGE 7: 3D Mesh Inspection (Topology & geometry inspection)
     // -------------------------------------------------------------
     else if (currentStageId === "stage_solid3d") {
       const dissolve = Math.min(1.0, stageTime / 2.0);
@@ -366,7 +366,7 @@ export const CinematicSceneDirector: React.FC = () => {
       if (!isAnalyzing && stageTime > 2.6) {
         updateStageStatus("stage_solid3d", "completed", { progress: 1.0 });
         setCurrentStage("stage_articulation");
-        setVisualizationMode("articulated");
+        setVisualizationMode("wireframe");
         stageTimerRef.current = 0;
       }
     }
@@ -381,7 +381,7 @@ export const CinematicSceneDirector: React.FC = () => {
       if (!isAnalyzing && stageTime > 2.8) {
         updateStageStatus("stage_articulation", "completed", { progress: 1.0 });
         setCurrentStage("stage_combined");
-        setVisualizationMode("combined");
+        setVisualizationMode("wireframe");
         stageTimerRef.current = 0;
       }
     }
@@ -399,7 +399,8 @@ export const CinematicSceneDirector: React.FC = () => {
 
       if (assemble >= 1.0) {
         updateStageStatus("stage_combined", "completed", { progress: 1.0 });
-        setActiveRepresentation("combined");
+        setActiveRepresentation("wireframe");
+        setVisualizationMode("wireframe");
         // Handover smoothly to standard interactive viewport
         setTimeout(() => {
           useCinematicStore.getState().skipCinematic();

@@ -1331,7 +1331,7 @@ export const ContextualPanel: React.FC = () => {
                                  c.name === "seated_idle" ? "Seated Idle Breathing" :
                                  c.name === "seated_weight_shift" ? "Seated Weight Shift" :
                                  c.name.replace(/_/g, " "),
-                          duration: c.duration_seconds ?? (c as unknown as { durationSeconds?: number }).durationSeconds ?? 3.0,
+                          duration: (c as unknown as { durationSeconds?: number; duration_seconds?: number }).durationSeconds ?? (c as unknown as { durationSeconds?: number; duration_seconds?: number }).duration_seconds ?? 3.0,
                         }))
                       : isSeated
                       ? [

@@ -137,4 +137,26 @@ describe("Cinematic Reconstruction Animation Redesign", () => {
     expect(nextState.activePersonIndex).toBe(1);
     expect(nextState.personExtractionProgress).toBe(0.8);
   });
+
+  it("prioritizes wireframe representation during and upon completion of the reconstruction animation", () => {
+    act(() => {
+      useSceneStore.getState().setScene(mockScene);
+      useCinematicStore.getState().startCinematic();
+      // Set to wireframe during animation
+      useSceneStore.getState().setVisualizationMode("wireframe");
+    });
+
+    expect(useCinematicStore.getState().isCinematicActive).toBe(true);
+    expect(useSceneStore.getState().visualizationMode).toBe("wireframe");
+    expect(useSceneStore.getState().activeRepresentation).toBe("wireframe");
+
+    // When cinematic sequence concludes, it remains firmly in wireframe mode instead of forcing 3D solid
+    act(() => {
+      useCinematicStore.getState().skipCinematic();
+      useSceneStore.getState().setVisualizationMode("wireframe");
+    });
+
+    expect(useSceneStore.getState().visualizationMode).toBe("wireframe");
+    expect(useSceneStore.getState().activeRepresentation).toBe("wireframe");
+  });
 });

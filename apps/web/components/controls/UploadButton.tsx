@@ -3,6 +3,7 @@
 import React, { useRef } from "react";
 import { apiClient } from "@/lib/api-client";
 import { getImageDimensions } from "@/lib/image-utils";
+import { executeReconstruction } from "@/lib/reconstruction";
 import { useSceneStore } from "@/stores/scene-store";
 import { useUIStore } from "@/stores/ui-store";
 import styles from "./UploadButton.module.css";
@@ -38,19 +39,21 @@ export const UploadButton: React.FC<UploadButtonProps> = ({
       const localUrl = URL.createObjectURL(file);
       setLocalPhoto(localUrl, dims.width, dims.height, file.name);
 
-      // 2. Persist to local backend if available
+      // 2. Persist to local backend if available and immediately begin reconstruction animation
       try {
         setStatusNotice("Uploading photograph to local storage...");
         const res = await apiClient.uploadPhoto(file);
         if (res.scene) {
           setScene(res.scene);
-          setStatusNotice("Photograph loaded. Click 'Reconstruct Scene' to begin 3D reconstruction.");
+          // Automatically trigger reconstruction pipeline & animation
+          await executeReconstruction(res.scene);
         }
       } catch (err: unknown) {
         // Fall back gracefully to client-side session without failing the user
         const msg = err instanceof Error ? err.message : "API offline";
         console.warn("Backend storage not reached, operating in client-local mode:", msg);
-        setStatusNotice("Photograph preview ready (local mode). Click 'Reconstruct Scene' to begin.");
+        setStatusNotice("Photograph loaded (local mode). Starting reconstruction animation...");
+        await executeReconstruction();
       }
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : "Failed to load image";

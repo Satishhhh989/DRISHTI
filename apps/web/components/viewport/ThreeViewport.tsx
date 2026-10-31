@@ -15,6 +15,7 @@ import { useCinematicStore } from "@/stores/cinematic-store";
 import { useUIStore } from "@/stores/ui-store";
 import { getImageDimensions } from "@/lib/image-utils";
 import { apiClient } from "@/lib/api-client";
+import { executeReconstruction } from "@/lib/reconstruction";
 import styles from "./ThreeViewport.module.css";
 
 export const ThreeViewport: React.FC = () => {
@@ -73,10 +74,11 @@ export const ThreeViewport: React.FC = () => {
           const res = await apiClient.uploadPhoto(file);
           if (res.scene) {
             setScene(res.scene);
+            await executeReconstruction(res.scene);
           }
-          setStatusNotice("Photograph loaded. Click 'Reconstruct Scene' to begin 3D reconstruction.");
         } catch {
-          setStatusNotice("Photograph preview ready (local mode). Click 'Reconstruct Scene' to begin.");
+          setStatusNotice("Photograph loaded (local mode). Starting reconstruction animation...");
+          await executeReconstruction();
         }
       } catch (err: unknown) {
         const msg = err instanceof Error ? err.message : "Failed to load dropped image";
@@ -205,7 +207,7 @@ export const ThreeViewport: React.FC = () => {
               )}
 
               {/* 2. Hybrid Combined Scene: Photographic Reference Plane + Assembled 3D Characters */}
-              {(activeRepresentation === "combined" || (isAnalyzing && hasReconstructedMeshes)) && photoDimensions && (
+              {(activeRepresentation === "combined" || isCinematicActive || (isAnalyzing && hasReconstructedMeshes)) && photoDimensions && (
                 <PhotoPlane
                   photoUrl={localPhotoUrl}
                   aspectRatio={photoDimensions.aspect}
@@ -222,7 +224,7 @@ export const ThreeViewport: React.FC = () => {
                     activeRepresentation === "articulated" ||
                     activeRepresentation === "combined"
                       ? activeRepresentation
-                      : "combined") as Unified3DMode
+                      : "wireframe") as Unified3DMode
                   }
                   presentationProgress={assemblyProgress}
                 />

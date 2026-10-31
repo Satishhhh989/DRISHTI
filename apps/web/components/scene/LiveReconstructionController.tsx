@@ -113,11 +113,11 @@ export const LiveReconstructionController: React.FC<LiveReconstructionController
         );
       }
 
-      // Auto-transition to Combined representation once step-forward completes
+      // Auto-transition to Wireframe representation once step-forward completes
       if (assemblyProgressRef.current >= 1.0 && !hasAutoTransitionedRef.current) {
         hasAutoTransitionedRef.current = true;
-        if (activeRepresentation === "photo") {
-          setActiveRepresentation("combined");
+        if (activeRepresentation === "photo" || activeRepresentation === "combined") {
+          setActiveRepresentation("wireframe");
         }
       }
     }
