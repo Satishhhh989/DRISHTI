@@ -19,6 +19,8 @@ export const ContextualPanel: React.FC = () => {
   const stages = useSceneStore((state) => state.stages);
   const partialFailures = useSceneStore((state) => state.partialFailures);
   const depthStrength = useSceneStore((state) => state.depthStrength);
+  const qualityPreset = useSceneStore((state) => state.qualityPreset);
+  const setQualityPreset = useSceneStore((state) => state.setQualityPreset);
   const setDepthStrength = useSceneStore((state) => state.setDepthStrength);
   const setAnalysisState = useSceneStore((state) => state.setAnalysisState);
   const applyEvent = useSceneStore((state) => state.applyEvent);
@@ -60,7 +62,7 @@ export const ContextualPanel: React.FC = () => {
       setAnalysisState(true, "Queuing progressive analysis pipeline...", 0.05);
       setError(null);
 
-      const job = await apiClient.triggerAnalysis(currentScene.id);
+      const job = await apiClient.triggerAnalysis(currentScene.id, 0.35, false, true, qualityPreset);
       setAnalysisState(true, "Job accepted by engine", 0.08, job.job_id);
       setStatusNotice("Analyzing photograph (Detection, Segmentation, Depth)...");
 
@@ -625,6 +627,42 @@ export const ContextualPanel: React.FC = () => {
           </div>
         )}
 
+        {/* Quality Preset Selector */}
+        {currentScene && !isAnalyzing && (
+          <div style={{ marginTop: "10px", marginBottom: "8px" }} data-testid="quality-preset-selector">
+            <div style={{ fontSize: "11px", color: "#a1a1aa", marginBottom: "4px", display: "flex", justifyContent: "space-between" }}>
+              <span>Quality Preset</span>
+              <span style={{ color: "#38bdf8", fontWeight: 500 }}>
+                {qualityPreset === "maximum" ? "Maximum (80 steps)" : qualityPreset === "high" ? "High (45 steps)" : "Preview (Fast)"}
+              </span>
+            </div>
+            <div style={{ display: "flex", gap: "4px" }}>
+              {(["preview", "high", "maximum"] as const).map((p) => (
+                <button
+                  key={p}
+                  type="button"
+                  onClick={() => setQualityPreset(p)}
+                  style={{
+                    flex: 1,
+                    padding: "4px 0",
+                    fontSize: "10px",
+                    fontWeight: qualityPreset === p ? 600 : 400,
+                    borderRadius: "4px",
+                    border: qualityPreset === p ? "1px solid #38bdf8" : "1px solid #3f3f46",
+                    backgroundColor: qualityPreset === p ? "rgba(56, 189, 248, 0.15)" : "#18181b",
+                    color: qualityPreset === p ? "#38bdf8" : "#94a3b8",
+                    cursor: "pointer",
+                    textTransform: "capitalize",
+                  }}
+                  data-testid={`quality-preset-${p}`}
+                >
+                  {p}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+
         {/* Manual Trigger Analysis Button */}
         {currentScene && !isAnalyzing && (
           <button
@@ -779,6 +817,30 @@ export const ContextualPanel: React.FC = () => {
                     <span className={styles.propLabel}>Quality Preset</span>
                     <span className={styles.propValue} style={{ textTransform: "capitalize", fontSize: "11px" }}>
                       {selectedEntity.reconstruction.qualityPreset}
+                    </span>
+                  </div>
+                )}
+                {selectedEntity.reconstruction.stanceDescription && (
+                  <div className={styles.propRow}>
+                    <span className={styles.propLabel}>Stance / Pose</span>
+                    <span className={styles.propValue} style={{ fontSize: "10px", color: "#38bdf8" }} data-testid="reconstruction-stance-description">
+                      {selectedEntity.reconstruction.stanceDescription}
+                    </span>
+                  </div>
+                )}
+                {selectedEntity.reconstruction.observedKeypointsCount !== undefined && (
+                  <div className={styles.propRow}>
+                    <span className={styles.propLabel}>Fitted Keypoints</span>
+                    <span className={styles.propValue} data-testid="reconstruction-fitted-keypoints">
+                      {selectedEntity.reconstruction.observedKeypointsCount} joints
+                    </span>
+                  </div>
+                )}
+                {selectedEntity.reconstruction.poseConvergenceStatus && (
+                  <div className={styles.propRow}>
+                    <span className={styles.propLabel}>Pose Fitting</span>
+                    <span className={styles.propValue} style={{ fontSize: "10px", color: "#10b981" }} data-testid="reconstruction-pose-convergence">
+                      {selectedEntity.reconstruction.poseConvergenceStatus}
                     </span>
                   </div>
                 )}

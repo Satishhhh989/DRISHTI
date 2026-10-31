@@ -17,6 +17,7 @@ export const UploadButton: React.FC<UploadButtonProps> = ({
   className,
 }) => {
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const qualityPreset = useSceneStore((state) => state.qualityPreset);
   const isUploading = useSceneStore((state) => state.isUploading);
   const setIsUploading = useSceneStore((state) => state.setIsUploading);
   const setLocalPhoto = useSceneStore((state) => state.setLocalPhoto);
@@ -59,7 +60,7 @@ export const UploadButton: React.FC<UploadButtonProps> = ({
               0.05
             );
             setStatusNotice("Running local neural networks (detection, segmentation, depth)...");
-            const job = await apiClient.triggerAnalysis(targetSceneId);
+            const job = await apiClient.triggerAnalysis(targetSceneId, 0.35, false, true, qualityPreset);
             setAnalysisState(true, "Job accepted by engine", 0.08, job.job_id);
 
             // 4. Stream real-time processing events via SSE with fallback

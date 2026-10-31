@@ -24,6 +24,7 @@ class AnalyzeRequest(BaseModel):
     use_mock: bool = False
     simulate_zero_people: bool = False
     include_depth: bool = True
+    quality_preset: str = Field(default="high", pattern="^(preview|high|maximum)$")
 
 
 class AnalyzeResponse(BaseModel):
@@ -96,6 +97,7 @@ async def analyze_scene(
                 job_id=job_id,
                 confidence_threshold=request.confidence_threshold,
                 include_depth=request.include_depth,
+                quality_preset=request.quality_preset,
             )
         except Exception:
             # Errors are already recorded in event emitter and scene status

@@ -67,6 +67,9 @@ export function normalizeEntity(e: any): SceneEntity {
     reprojectionErrorPixels: rawRecon.reprojectionErrorPixels ?? rawRecon.reprojection_error_pixels,
     reprojectionErrorNormalized: rawRecon.reprojectionErrorNormalized ?? rawRecon.reprojection_error_normalized,
     silhouetteIou: rawRecon.silhouetteIou ?? rawRecon.silhouette_iou,
+    stanceDescription: rawRecon.stanceDescription ?? rawRecon.stance_description,
+    observedKeypointsCount: rawRecon.observedKeypointsCount ?? rawRecon.observed_keypoints_count,
+    poseConvergenceStatus: rawRecon.poseConvergenceStatus ?? rawRecon.pose_convergence_status,
   } : undefined;
 
   const rawPlacement = e.placement;

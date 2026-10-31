@@ -202,6 +202,9 @@ class HumanReconstructionData(BaseModel):
     reprojection_error_pixels: Optional[float] = None
     reprojection_error_normalized: Optional[float] = None
     silhouette_iou: Optional[float] = None
+    stance_description: Optional[str] = None
+    observed_keypoints_count: Optional[int] = None
+    pose_convergence_status: Optional[str] = None
     warnings: List[str] = Field(default_factory=list)
     error_message: Optional[str] = None
     reconstructed_at: Optional[str] = None

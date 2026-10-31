@@ -104,17 +104,21 @@ class PipelineCoordinator:
         self._depth_estimator = depth_estimator
         self._reconstructor = reconstructor
 
-    def get_detector(self) -> IPersonDetector:
+    def get_detector(self, quality_preset: str = "high") -> IPersonDetector:
         if self._detector is not None:
             return self._detector
+        if quality_preset in ("high", "maximum") and model_manager.is_model_available("yolov8m-seg"):
+            return YoloPersonDetector("yolov8m-seg")
         if model_manager.is_model_available("yolov8n-seg"):
             return YoloPersonDetector("yolov8n-seg")
         logger.warning("YOLO weights not found; falling back to MockPersonDetector")
         return MockPersonDetector()
 
-    def get_segmentor(self) -> ISegmentor:
+    def get_segmentor(self, quality_preset: str = "high") -> ISegmentor:
         if self._segmentor is not None:
             return self._segmentor
+        if quality_preset in ("high", "maximum") and model_manager.is_model_available("yolov8m-seg"):
+            return YoloPersonSegmentor("yolov8m-seg")
         if model_manager.is_model_available("yolov8n-seg"):
             return YoloPersonSegmentor("yolov8n-seg")
         return MockPersonSegmentor()
@@ -151,6 +155,7 @@ class PipelineCoordinator:
         confidence_threshold: float = 0.35,
         include_depth: bool = True,
         include_reconstruction: bool = True,
+        quality_preset: str = "high",
     ) -> Scene:
         """Executes the progressive DRISHTI image analysis and spatial-photo pipeline."""
         scene = scene_manager.get_scene(scene_id)
@@ -236,7 +241,7 @@ class PipelineCoordinator:
                 message="Executing local neural network person detection...",
             )
 
-            detector = self.get_detector()
+            detector = self.get_detector(quality_preset=quality_preset)
             detections = await asyncio.to_thread(
                 detector.detect_people,
                 photo_path,
@@ -348,7 +353,7 @@ class PipelineCoordinator:
                     message=f"Generating individual alpha masks for {len(valid_detections)} people...",
                 )
 
-                segmentor = self.get_segmentor()
+                segmentor = self.get_segmentor(quality_preset=quality_preset)
                 segmentation_results = await asyncio.to_thread(
                     segmentor.segment_people,
                     photo_path,
@@ -682,8 +687,12 @@ class PipelineCoordinator:
                 )
 
                 try:
-                    pose_model_path = model_manager.get_model_path("yolov8n-pose")
-                    if pose_model_path.exists() and not isinstance(self.get_detector(), MockPersonDetector):
+                    if quality_preset in ("high", "maximum") and model_manager.is_model_available("yolov8m-pose"):
+                        pose_model_path = model_manager.get_model_path("yolov8m-pose")
+                    else:
+                        pose_model_path = model_manager.get_model_path("yolov8n-pose")
+
+                    if pose_model_path.exists() and not isinstance(self.get_detector(quality_preset), MockPersonDetector):
                         pose_estimator: IPoseEstimator = YoloPoseEstimator(model_path=pose_model_path, device=device_manager.device)
                     else:
                         pose_estimator = MockPoseEstimator()
@@ -784,7 +793,7 @@ class PipelineCoordinator:
                             if "pose_result" in sig.parameters or any(p.kind == inspect.Parameter.VAR_KEYWORD for p in sig.parameters.values()):
                                 rec_kwargs["pose_result"] = matched_pose
                             if "quality_preset" in sig.parameters or any(p.kind == inspect.Parameter.VAR_KEYWORD for p in sig.parameters.values()):
-                                rec_kwargs["quality_preset"] = "high"
+                                rec_kwargs["quality_preset"] = quality_preset
 
                             rec_result = reconstructor.reconstruct(**rec_kwargs)
                             reconstructed_vertices[entity.id] = rec_result.vertices
@@ -803,26 +812,51 @@ class PipelineCoordinator:
                             box = entity.detection.bounding_box
                             img_h, img_w = img_rgb.shape[:2]
                             aspect = img_w / img_h
-                            box_center_x = (box.x_min + box.x_max) / 2.0
-                            box_center_y = (box.y_min + box.y_max) / 2.0
-
-                            # Map normalized 2D image coordinates to Three.js scene space
                             plane_h = 2.0
                             plane_w = plane_h * aspect
-                            pos_x = float((box_center_x - 0.5) * plane_w)
 
-                            # Mesh bounds and center offset in canonical space (+Y UP)
-                            v_min_y = float(rec_result.bounds_min[1])
-                            v_max_y = float(rec_result.bounds_max[1])
-                            mesh_h = max(0.2, v_max_y - v_min_y)
-                            mesh_center_y = (v_max_y + v_min_y) / 2.0
+                            # 1. Metric scale computation:
+                            # Weak-perspective camera scale relates the SMPL 3D metric mesh to the cropped box
+                            sq_dim = max(
+                                int(max((box.x_max - box.x_min) * img_w, (box.y_max - box.y_min) * img_h) * 1.15),
+                                128
+                            )
+                            if rec_result.camera_params and "scale" in rec_result.camera_params:
+                                cam_s = float(rec_result.camera_params["scale"])
+                                scale_val = float(np.clip(cam_s * (sq_dim / float(img_h)), 0.45, 1.6))
+                            else:
+                                v_min_y = float(rec_result.bounds_min[1])
+                                v_max_y = float(rec_result.bounds_max[1])
+                                mesh_h = max(0.2, v_max_y - v_min_y)
+                                box_h = (box.y_max - box.y_min) * plane_h
+                                scale_val = float(np.clip(box_h / mesh_h, 0.5, 1.5))
 
-                            # Scale mesh proportionally to detected bounding box height
-                            box_h = (box.y_max - box.y_min) * plane_h
-                            scale_val = float(np.clip(box_h / mesh_h, 0.5, 1.5))
+                            # 2. Pelvis-anchored 2D-to-3D spatial placement:
+                            pelvis_2d_x = (box.x_min + box.x_max) / 2.0
+                            pelvis_2d_y = box.y_min + (box.y_max - box.y_min) * 0.52
 
-                            # Center mesh vertically with its 2D image-space detection box
-                            pos_y = float((1.0 - box_center_y) * plane_h - (mesh_center_y * scale_val))
+                            if matched_pose and hasattr(matched_pose, "keypoints"):
+                                kps = matched_pose.keypoints
+                                l_hip = kps.get("left_hip")
+                                r_hip = kps.get("right_hip")
+                                if l_hip and r_hip and l_hip.confidence >= 0.2 and r_hip.confidence >= 0.2:
+                                    pelvis_2d_x = (l_hip.x_norm + r_hip.x_norm) / 2.0
+                                    pelvis_2d_y = (l_hip.y_norm + r_hip.y_norm) / 2.0
+                                elif l_hip and l_hip.confidence >= 0.25:
+                                    pelvis_2d_x = l_hip.x_norm
+                                    pelvis_2d_y = l_hip.y_norm
+                                elif r_hip and r_hip.confidence >= 0.25:
+                                    pelvis_2d_x = r_hip.x_norm
+                                    pelvis_2d_y = r_hip.y_norm
+
+                            target_pelvis_world_x = float((pelvis_2d_x - 0.5) * plane_w)
+                            target_pelvis_world_y = float((1.0 - pelvis_2d_y) * plane_h)
+
+                            pelvis_offset_x = rec_result.pelvis_3d[0] if rec_result.pelvis_3d else 0.0
+                            pelvis_offset_y = rec_result.pelvis_3d[1] if rec_result.pelvis_3d else 0.0
+
+                            pos_x = float(target_pelvis_world_x - (scale_val * pelvis_offset_x))
+                            pos_y = float(target_pelvis_world_y - (scale_val * pelvis_offset_y))
 
                             # Stagger along Z based on relative depth proximity in front of photo plane (Z=-0.6)
                             if depth_info and depth_info.median_proximity is not None:
@@ -867,6 +901,9 @@ class PipelineCoordinator:
                                 reprojection_error_pixels=rec_result.reprojection_error_pixels,
                                 reprojection_error_normalized=rec_result.reprojection_error_normalized,
                                 silhouette_iou=rec_result.silhouette_iou,
+                                stance_description=rec_result.stance_description,
+                                observed_keypoints_count=rec_result.observed_keypoints_count,
+                                pose_convergence_status=rec_result.pose_convergence_status,
                                 warnings=rec_result.warnings,
                                 reconstructed_at=datetime.now(timezone.utc).isoformat(),
                             )

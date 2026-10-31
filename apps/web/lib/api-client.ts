@@ -101,7 +101,8 @@ export class ApiClient {
     sceneId: string,
     confidenceThreshold: number = 0.35,
     useMock: boolean = false,
-    includeDepth: boolean = true
+    includeDepth: boolean = true,
+    qualityPreset: "preview" | "high" | "maximum" = "high"
   ): Promise<AnalyzeJobResponse> {
     const res = await fetch(`${this.base}/api/v1/pipeline/analyze`, {
       method: "POST",
@@ -111,6 +112,7 @@ export class ApiClient {
         confidence_threshold: confidenceThreshold,
         use_mock: useMock,
         include_depth: includeDepth,
+        quality_preset: qualityPreset,
       }),
     });
     if (!res.ok) {

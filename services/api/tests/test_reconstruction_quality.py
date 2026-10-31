@@ -229,10 +229,12 @@ def test_standing_vs_seated_pose_preservation():
     img = np.array(Image.open(test_img).convert("RGB"))
     detections = det.detect_people(test_img)
 
-    # Person 1 (seated center: x ~ 0.37-0.64)
-    # Person 2 (standing left-center: x ~ 0.22-0.40)
-    res_seated = rec.reconstruct(img, detections[0].bounding_box)
-    res_standing = rec.reconstruct(img, detections[1].bounding_box)
+    # Identify seated person (center seated: cx ~ 0.51) and standing person (standing left: cx ~ 0.10)
+    seated_det = next(d for d in detections if 0.45 < (d.bounding_box.x_min + d.bounding_box.x_max) / 2.0 < 0.60)
+    standing_det = next(d for d in detections if (d.bounding_box.x_min + d.bounding_box.x_max) / 2.0 < 0.20)
+
+    res_seated = rec.reconstruct(img, seated_det.bounding_box)
+    res_standing = rec.reconstruct(img, standing_det.bounding_box)
 
     v_seated = res_seated.vertices
     v_standing = res_standing.vertices
@@ -714,6 +716,124 @@ async def test_reconstruction_pipeline_resequencing_integration(tmp_path):
         assert e.reconstruction.status == "ready"
         assert e.reconstruction.reprojection_error_pixels is not None
         assert e.reconstruction.silhouette_iou is not None
+        assert e.reconstruction.stance_description is not None
         assert e.skeleton is not None
         assert e.skeleton.validation_status == "valid"
+
+
+# ---------------------------------------------------------------------------
+# 22. Multi-Hypothesis Seated Pose Fitting Verification
+# ---------------------------------------------------------------------------
+def test_multi_hypothesis_seated_pose_fitting():
+    """Verifies that SMPLPoseFitter detects seated keypoints and converges to horizontal thighs."""
+    from app.pipeline.motion import PoseEstimationResult, PoseKeypoint2D
+    from app.pipeline.reconstructor import SMPLPoseFitter, SMPLForwardLayer
+
+    ckpt_path = model_manager.get_model_path("spin-human-reconstruction")
+    if not ckpt_path.exists():
+        pytest.skip("SPIN model weights not found")
+
+    smpl_path = ckpt_path.parent / "SMPL_N_model.npz"
+    npz = np.load(smpl_path, allow_pickle=True)
+    smpl = SMPLForwardLayer(dict(npz))
+    fitter = SMPLPoseFitter(smpl, npz["weights"], torch.device("cpu"))
+
+    # Synthesize keypoints for a seated individual
+    # Thigh is horizontal (hip Y ~ 0.52, knee Y ~ 0.54), shin is vertical (ankle Y ~ 0.85)
+    seated_kps = {
+        "left_hip": PoseKeypoint2D(x_norm=0.45, y_norm=0.52, confidence=0.92, is_visible=True),
+        "right_hip": PoseKeypoint2D(x_norm=0.55, y_norm=0.52, confidence=0.92, is_visible=True),
+        "left_knee": PoseKeypoint2D(x_norm=0.44, y_norm=0.54, confidence=0.90, is_visible=True),
+        "right_knee": PoseKeypoint2D(x_norm=0.56, y_norm=0.54, confidence=0.90, is_visible=True),
+        "left_ankle": PoseKeypoint2D(x_norm=0.44, y_norm=0.85, confidence=0.88, is_visible=True),
+        "right_ankle": PoseKeypoint2D(x_norm=0.56, y_norm=0.85, confidence=0.88, is_visible=True),
+        "left_shoulder": PoseKeypoint2D(x_norm=0.42, y_norm=0.25, confidence=0.95, is_visible=True),
+        "right_shoulder": PoseKeypoint2D(x_norm=0.58, y_norm=0.25, confidence=0.95, is_visible=True),
+        "head": PoseKeypoint2D(x_norm=0.50, y_norm=0.15, confidence=0.95, is_visible=True),
+    }
+    pose_res = PoseEstimationResult(
+        keypoints=seated_kps,
+        bounding_box=BoundingBox2D(x_min=0.35, y_min=0.10, x_max=0.65, y_max=0.90),
+        confidence_score=0.92,
+        model_name="yolov8m-pose",
+    )
+
+    init_pose = torch.zeros(1, 24, 6)
+    init_pose[0, :, 0] = 1.0
+    init_pose[0, :, 4] = 1.0
+    init_shape = torch.zeros(1, 10)
+    init_cam = torch.tensor([[0.9, 0.0, 0.0]])
+
+    img = np.zeros((1000, 1000, 3), dtype=np.uint8)
+    _, meta = prepare_person_crop(img, pose_res.bounding_box, padding=0.15, target_size=(224, 224))
+
+    opt_pose, opt_shape, opt_cam, metrics = fitter.fit(
+        init_pose=init_pose,
+        init_shape=init_shape,
+        init_cam=init_cam,
+        pose_result=pose_res,
+        transform_meta=meta,
+        quality_preset="high",
+    )
+
+    assert "Seated" in metrics["stance_description"]
+    assert metrics["quality_preset"] == "high"
+    assert metrics["reprojection_error_normalized"] < 0.25
+
+    # 3D thigh should be approximately horizontal: |hip_y - knee_y| < 0.12m
+    v_opt = smpl(opt_pose, opt_shape)
+    j_opt = torch.matmul(smpl.J_regressor, v_opt)
+    thigh_dy = abs(j_opt[1, 1].item() - j_opt[4, 1].item())
+    assert thigh_dy < 0.12
+
+
+# ---------------------------------------------------------------------------
+# 23. Quality Preset End-to-End Propagation
+# ---------------------------------------------------------------------------
+@pytest.mark.asyncio
+async def test_quality_preset_propagation(tmp_path):
+    """Verifies that quality preset propagates through PipelineCoordinator to scene entities."""
+    from app.pipeline.mock import MockPersonDetector, MockPersonSegmentor, MockDepthEstimator
+    from app.pipeline.reconstructor import MockHumanReconstructor
+    from app.scene.manager import scene_manager
+    from app.jobs.tracker import job_tracker
+    from app.assets.manager import asset_manager
+
+    coord = PipelineCoordinator(
+        detector=MockPersonDetector(),
+        segmentor=MockPersonSegmentor(),
+        depth_estimator=MockDepthEstimator(),
+        reconstructor=MockHumanReconstructor(),
+    )
+
+    img = Image.new("RGB", (640, 480), color=(100, 100, 100))
+    buf = io.BytesIO()
+    img.save(buf, format="JPEG")
+    photo_asset = asset_manager.register_photo(
+        content=buf.getvalue(),
+        filename="test_preset.jpg",
+        mime_type="image/jpeg",
+    )
+
+    for preset in ["preview", "high", "maximum"]:
+        scene = scene_manager.create_scene_from_photo(photo_asset, name=f"Preset {preset} Test")
+        job_id = job_tracker.create_job(scene_id=scene.id)
+
+        res_scene = await coord.execute_pipeline(
+            scene_id=scene.id,
+            job_id=job_id,
+            confidence_threshold=0.3,
+            include_depth=True,
+            include_reconstruction=True,
+            quality_preset=preset,
+        )
+
+        assert res_scene.processing_status == "ready"
+        assert len(res_scene.entities) > 0
+        for e in res_scene.entities:
+            assert e.reconstruction.quality_preset == preset
+            assert e.reconstruction.stance_description is not None
+            assert e.reconstruction.observed_keypoints_count is not None
+            assert e.reconstruction.pose_convergence_status is not None
+
 

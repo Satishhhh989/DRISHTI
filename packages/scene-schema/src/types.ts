@@ -215,6 +215,9 @@ export interface HumanReconstructionData {
   reprojectionErrorPixels?: number;
   reprojectionErrorNormalized?: number;
   silhouetteIou?: number;
+  stanceDescription?: string;
+  observedKeypointsCount?: number;
+  poseConvergenceStatus?: string;
   warnings?: string[];
   errorMessage?: string | null;
   reconstructedAt?: string;

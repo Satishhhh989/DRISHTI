@@ -17,10 +17,13 @@ import {
   StageProgressInfo,
 } from "./event-reducer";
 
+export type QualityPreset = "preview" | "high" | "maximum";
+
 interface SceneState {
   currentScene: Scene | null;
   activeRepresentation: RepresentationMode;
   visualizationMode: VisualizationMode;
+  qualityPreset: QualityPreset;
   localPhotoUrl: string | null;
   photoDimensions: { width: number; height: number; aspect: number } | null;
   depthStrength: number;
@@ -35,6 +38,7 @@ interface SceneState {
   partialFailures: Array<{ stage: string; message: string }>;
 
   // Actions
+  setQualityPreset: (preset: QualityPreset) => void;
   setScene: (scene: Scene) => void;
   reconcileAuthoritativeScene: (scene: Scene) => void;
   applyEvent: (event: ProcessingEvent) => void;
@@ -72,6 +76,7 @@ export const useSceneStore = create<SceneState>((set, get) => ({
   currentScene: null,
   activeRepresentation: "photo",
   visualizationMode: "detection",
+  qualityPreset: "high",
   localPhotoUrl: null,
   photoDimensions: null,
   depthStrength: 0.08,
@@ -85,6 +90,8 @@ export const useSceneStore = create<SceneState>((set, get) => ({
   stages: {},
   partialFailures: [],
 
+  setQualityPreset: (preset: QualityPreset) => set({ qualityPreset: preset }),
+
   setScene: (scene) => {
     const norm = normalizeScene(scene);
     let depthVisUrl: string | null = null;
@@ -95,8 +102,13 @@ export const useSceneStore = create<SceneState>((set, get) => ({
       depthVisUrl = uri.startsWith("http") ? uri : `${API_BASE}${uri}`;
     }
 
+    const photoUrl = norm.sourceImage?.assetId
+      ? `${API_BASE}/api/v1/assets/${norm.sourceImage.assetId}/file`
+      : get().localPhotoUrl;
+
     set({
       currentScene: norm,
+      localPhotoUrl: photoUrl,
       photoDimensions: {
         width: norm.sourceImage?.width || 1920,
         height: norm.sourceImage?.height || 1080,
@@ -123,9 +135,14 @@ export const useSceneStore = create<SceneState>((set, get) => ({
       depthVisUrl = uri.startsWith("http") ? uri : `${API_BASE}${uri}`;
     }
 
+    const photoUrl = state.localPhotoUrl || (norm.sourceImage?.assetId
+      ? `${API_BASE}/api/v1/assets/${norm.sourceImage.assetId}/file`
+      : null);
+
     // Preserve active visualization mode if it is ready, otherwise fall back to original
     set({
       currentScene: norm,
+      localPhotoUrl: photoUrl,
       isAnalyzing: false,
       analysisProgress: 1.0,
       activeJobId: null,
