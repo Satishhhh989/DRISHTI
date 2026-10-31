@@ -58,6 +58,7 @@ from app.schemas.scene import (
     ConfidenceMetadata,
     CoordinateConvention,
     DetectionInfo,
+    EntityDepthInfo,
     GeometryMetadata,
     HumanReconstructionData,
     MeshBounds,
@@ -1155,5 +1156,82 @@ def test_hmr2_reprojection_overlay_generation():
     assert len(res.overlay_png_bytes) > 100
     # Check PNG magic bytes: \x89PNG\r\n\x1a\n
     assert res.overlay_png_bytes[:4] == b"\x89PNG"
+
+
+# ---------------------------------------------------------------------------
+# 32. Projective Vertex Colors & Dynamic Reference Plane Clearance
+# ---------------------------------------------------------------------------
+def test_projective_vertex_colors_and_dynamic_reference_plane():
+    """Verifies projective vertex color mapping in GLB and dynamic reference plane offset."""
+    import trimesh
+    from app.pipeline.reconstructor import compute_projected_vertex_colors, export_mesh_glb
+    from app.pipeline.assembly import SceneAssemblyEngine, AssemblyConfig
+
+    # 1. Test compute_projected_vertex_colors
+    verts = np.zeros((100, 3), dtype=np.float32)
+    normals = np.zeros((100, 3), dtype=np.float32)
+    normals[:, 2] = 1.0  # Front-facing towards camera (+Z in Three.js)
+    crop_rgb = np.full((128, 128, 3), 180, dtype=np.uint8)
+    crop_rgb[:, :, 0] = 220  # Reddish crop
+    cam = {"scale": 1.0, "tx": 0.0, "ty": 0.0}
+
+    vc = compute_projected_vertex_colors(verts, normals, cam, crop_rgb)
+    assert vc.shape == (100, 4)
+    assert vc.dtype == np.uint8
+    # Front-facing vertices should sample close to [220, 180, 180, 255]
+    assert vc[0, 0] > 190
+    assert vc[0, 3] == 255
+
+    # 2. Test export_mesh_glb embedding vertex colors
+    faces = np.zeros((10, 3), dtype=np.int32)
+    for i in range(10):
+        faces[i] = [i * 3, i * 3 + 1, i * 3 + 2]
+    glb_bytes = export_mesh_glb(verts, faces, normals, vertex_colors=vc)
+    loaded_scene = trimesh.load(trimesh.util.wrap_as_stream(glb_bytes), file_type="glb")
+    loaded_mesh = list(loaded_scene.geometry.values())[0]
+    assert hasattr(loaded_mesh.visual, "vertex_colors")
+    assert loaded_mesh.visual.vertex_colors is not None
+    assert len(loaded_mesh.visual.vertex_colors) == 100
+
+    # 3. Test dynamic reference plane clearance in SceneAssemblyEngine
+    engine = SceneAssemblyEngine()
+    scene = Scene(
+        id="test-clearance-scene",
+        name="Clearance Scene",
+        source_image=SourceImageMetadata(
+            asset_id="asset-1",
+            filename="photo.jpg",
+            width=1920,
+            height=1080,
+            aspect_ratio=1.777,
+            mime_type="image/jpeg",
+            size_bytes=100000,
+        ),
+        entities=[
+            SceneEntity(
+                id="deep-person",
+                source_image_id="img-1",
+                bounding_box=BoundingBox2D(x_min=0.2, y_min=0.2, x_max=0.4, y_max=0.8),
+                depth=EntityDepthInfo(median_proximity=0.1), # Deep in scene (-Z)
+            ),
+            SceneEntity(
+                id="foreground-person",
+                source_image_id="img-1",
+                bounding_box=BoundingBox2D(x_min=0.6, y_min=0.2, x_max=0.8, y_max=0.8),
+                depth=EntityDepthInfo(median_proximity=0.9), # Close to camera (+Z)
+            ),
+        ],
+    )
+    res = engine.assemble(scene)
+    ref_plane_node = res.scene_graph.nodes["plane-reference"]
+    ref_plane_z = ref_plane_node.transform.position.z
+
+    all_entity_z = [e.transform.position.z for e in res.entities]
+    min_entity_z = min(all_entity_z)
+
+    # Reference plane MUST be strictly behind all entities with clearance
+    assert ref_plane_z < min_entity_z, f"Reference plane {ref_plane_z} must be behind deepest entity {min_entity_z}"
+    assert min_entity_z - ref_plane_z >= 0.5, "At least 0.5m clearance behind deepest person"
+
 
 

@@ -114,9 +114,10 @@ def export_mesh_glb(
     vertices: np.ndarray,
     faces: np.ndarray,
     normals: Optional[np.ndarray] = None,
+    vertex_colors: Optional[np.ndarray] = None,
     name: str = "human_mesh"
 ) -> bytes:
-    """Exports validated mesh to binary GLB format with clean neutral PBR clay material."""
+    """Exports validated mesh to binary GLB format with PBR material and optional projected vertex colors."""
     if normals is None:
         normals = compute_mesh_normals(vertices, faces)
 
@@ -127,18 +128,94 @@ def export_mesh_glb(
         process=False
     )
 
-    # Neutral matte clay material for honest geometry inspection (no deceptive textures)
-    pbr_mat = trimesh.visual.material.PBRMaterial(
-        name=f"{name}_material",
-        roughnessFactor=0.6,
-        metallicFactor=0.08,
-        baseColorFactor=[0.78, 0.82, 0.88, 1.0],  # Soft neutral studio clay
-        doubleSided=True
-    )
-    mesh.visual.material = pbr_mat
+    if vertex_colors is not None and len(vertex_colors) == len(vertices):
+        vc = np.asarray(vertex_colors)
+        if vc.dtype != np.uint8:
+            vc = np.clip(vc, 0, 255).astype(np.uint8)
+        if vc.ndim == 2 and vc.shape[1] == 3:
+            alpha = np.full((len(vc), 1), 255, dtype=np.uint8)
+            vc = np.hstack([vc, alpha])
+        mesh.visual = trimesh.visual.ColorVisuals(mesh=mesh, vertex_colors=vc)
+    else:
+        pbr_mat = trimesh.visual.material.PBRMaterial(
+            name=f"{name}_material",
+            roughnessFactor=0.6,
+            metallicFactor=0.08,
+            baseColorFactor=[0.78, 0.82, 0.88, 1.0],
+            doubleSided=True
+        )
+        mesh.visual.material = pbr_mat
 
     glb_bytes = trimesh.exchange.gltf.export_glb(mesh)
     return glb_bytes
+
+
+def compute_projected_vertex_colors(
+    vertices_three: np.ndarray,
+    normals_three: np.ndarray,
+    camera_params: Dict[str, float],
+    crop_rgb: np.ndarray,
+    mask_gray: Optional[Union[bytes, np.ndarray]] = None,
+) -> np.ndarray:
+    """Projects photograph crop RGB colors onto 3D human mesh vertices.
+    
+    Uses weak-perspective camera projection (scale, tx, ty) to sample colors from the
+    cropped person photograph, blending front-facing camera projections smoothly onto
+    back-facing surfaces with diffuse ambient lighting and hair preservation.
+    
+    Args:
+        vertices_three: (N, 3) vertices in Three.js coordinates (+X right, +Y up, +Z out)
+        normals_three: (N, 3) surface normals in Three.js coordinates
+        camera_params: Dict with 'scale', 'tx', 'ty' from HMR/SPIN regressor
+        crop_rgb: (H, W, 3) cropped person image array (uint8)
+        mask_gray: Optional person segmentation alpha mask
+        
+    Returns:
+        (N, 4) uint8 RGBA vertex color array
+    """
+    s = float(camera_params.get("scale", 1.0))
+    tx = float(camera_params.get("tx", 0.0))
+    ty = float(camera_params.get("ty", 0.0))
+
+    # Convert Three.js coordinates back to OpenCV camera space for camera parameter alignment
+    x_cv = vertices_three[:, 0]
+    y_cv = -vertices_three[:, 1]
+    nz_cv = -normals_three[:, 2]  # nz_cv < 0 indicates surface facing camera
+
+    h_crop, w_crop = crop_rgb.shape[:2]
+
+    # Normalized Device Coordinates in [-1, 1]
+    u = s * x_cv + tx
+    v = s * y_cv + ty
+
+    # Pixel coordinates on square crop
+    px = np.clip(np.round((u + 1.0) * 0.5 * (w_crop - 1)).astype(np.int32), 0, w_crop - 1)
+    py = np.clip(np.round((v + 1.0) * 0.5 * (h_crop - 1)).astype(np.int32), 0, h_crop - 1)
+
+    # Sample direct front projection colors from crop
+    front_colors = crop_rgb[py, px].astype(np.float32)
+
+    # Sigmoidal front-to-back blend factor based on camera-facing normal component
+    # nz_cv < 0: front-facing (facing camera), nz_cv > 0: back-facing
+    blend_front = 1.0 / (1.0 + np.exp(np.clip(6.0 * nz_cv[:, None], -15.0, 15.0)))
+
+    # Back surface color: subtle diffuse ambient shading (85% luminance) matching clothing
+    back_colors = front_colors * 0.85
+
+    # Head top / hair region preservation (highest vertices in Y_three, guarded for full human height)
+    y_three = vertices_three[:, 1]
+    if np.ptp(y_three) > 0.8:
+        head_threshold = float(np.max(y_three)) - 0.22
+        is_head = y_three > head_threshold
+        if np.any(is_head):
+            avg_hair = np.mean(front_colors[is_head], axis=0, keepdims=True) * 0.65
+            back_colors[is_head] = avg_hair
+
+    final_rgb = blend_front * front_colors + (1.0 - blend_front) * back_colors
+    final_rgb = np.clip(np.round(final_rgb), 0, 255).astype(np.uint8)
+
+    alpha = np.full((len(vertices_three), 1), 255, dtype=np.uint8)
+    return np.hstack([final_rgb, alpha])
 
 
 # ---------------------------------------------------------------------------
@@ -1079,7 +1156,17 @@ class MockHumanReconstructor(HumanReconstructor):
         v_max = vertices.max(axis=0).tolist()
         dims = (vertices.max(axis=0) - vertices.min(axis=0)).tolist()
 
-        glb_bytes = export_mesh_glb(vertices, faces, normals, name="mock_human")
+        # Synthetic anatomical palette for mock double
+        vertex_colors = np.ones((len(vertices), 4), dtype=np.uint8) * 255
+        y_pts = vertices[:, 1]
+        is_legs = y_pts < -0.1
+        is_torso = (y_pts >= -0.1) & (y_pts < 0.45)
+        is_head = y_pts >= 0.45
+        vertex_colors[is_legs, :3] = [59, 130, 246]   # Classic denim blue
+        vertex_colors[is_torso, :3] = [100, 116, 139] # Slate shirt
+        vertex_colors[is_head, :3] = [245, 158, 11]   # Amber flesh tone
+
+        glb_bytes = export_mesh_glb(vertices, faces, normals, vertex_colors=vertex_colors, name="mock_human")
 
         # Mock metrics calibrated for test doubles
         reproj_px = 12.0 if quality_preset == "maximum" else 18.5 if quality_preset == "high" else 28.0
@@ -1101,7 +1188,7 @@ class MockHumanReconstructor(HumanReconstructor):
             pose_params=np.zeros(144, dtype=np.float32),
             shape_params=np.zeros(10, dtype=np.float32),
             camera_params={"scale": 0.9, "tx": 0.0, "ty": 0.0},
-            texture_availability="none",
+            texture_availability="partial",  # synthetic palette
             quality_score=quality_score,
             quality_preset=quality_preset,
             reprojection_error_pixels=reproj_px,
@@ -1244,14 +1331,29 @@ class SpinHumanReconstructor(HumanReconstructor):
         v_max = vertices.max(axis=0).tolist()
         dims = (vertices.max(axis=0) - vertices.min(axis=0)).tolist()
 
-        glb_bytes = export_mesh_glb(vertices, faces, normals, name="spin_human")
-
         cam_values = fitted_cam.squeeze(0).detach().cpu().numpy().tolist()
         camera_params = {
             "scale": float(cam_values[0]),
             "tx": float(cam_values[1]),
             "ty": float(cam_values[2]),
         }
+
+        # Projective vertex colors from crop
+        vertex_colors = compute_projected_vertex_colors(
+            vertices_three=vertices,
+            normals_three=normals,
+            camera_params=camera_params,
+            crop_rgb=crop_img,
+            mask_gray=mask_gray,
+        )
+
+        glb_bytes = export_mesh_glb(
+            vertices=vertices,
+            faces=faces,
+            normals=normals,
+            vertex_colors=vertex_colors,
+            name="spin_human",
+        )
 
         return HumanReconstructionResult(
             vertices=vertices,
@@ -1267,7 +1369,7 @@ class SpinHumanReconstructor(HumanReconstructor):
             pose_params=fitted_pose.squeeze(0).detach().cpu().numpy(),
             shape_params=fitted_shape.squeeze(0).detach().cpu().numpy(),
             camera_params=camera_params,
-            texture_availability="none",
+            texture_availability="partial",  # projective vertex colors
             quality_score=metrics["quality_score"],
             quality_preset=metrics["quality_preset"],
             reprojection_error_pixels=metrics["reprojection_error_pixels"],
@@ -1498,14 +1600,29 @@ class Hmr2HumanReconstructor(HumanReconstructor):
         v_max = vertices.max(axis=0).tolist()
         dims = (vertices.max(axis=0) - vertices.min(axis=0)).tolist()
 
-        glb_bytes = export_mesh_glb(vertices, faces, normals, name="hmr2_human")
-
         cam_values = fitted_cam.squeeze(0).detach().cpu().numpy().tolist() if isinstance(fitted_cam, torch.Tensor) else [1.0, 0.0, 0.0]
         camera_params = {
             "scale": float(cam_values[0]),
             "tx": float(cam_values[1]),
             "ty": float(cam_values[2]),
         }
+
+        # Projective vertex color mapping from cropped photograph
+        vertex_colors = compute_projected_vertex_colors(
+            vertices_three=vertices,
+            normals_three=normals,
+            camera_params=camera_params,
+            crop_rgb=crop_rgb,
+            mask_gray=mask_gray,
+        )
+
+        glb_bytes = export_mesh_glb(
+            vertices=vertices,
+            faces=faces,
+            normals=normals,
+            vertex_colors=vertex_colors,
+            name="hmr2_human",
+        )
 
         # 8. Reprojection diagnostic overlay
         overlay_png_bytes = None
@@ -1543,7 +1660,7 @@ class Hmr2HumanReconstructor(HumanReconstructor):
             pose_params=fitted_pose.squeeze(0).detach().cpu().numpy(),
             shape_params=fitted_shape.squeeze(0).detach().cpu().numpy(),
             camera_params=camera_params,
-            texture_availability="none",
+            texture_availability="partial",  # projective vertex colors
             quality_score=metrics.get("quality_score"),
             quality_preset=quality_preset,
             reprojection_error_pixels=metrics.get("reprojection_error_pixels"),

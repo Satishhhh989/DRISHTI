@@ -87,7 +87,8 @@ export const PhotoPlane: React.FC<PhotoPlaneProps> = ({
 
   // Center plane so bottom rests at ground plane (Y = height / 2)
   const positionY = height / 2;
-  const positionZ = isReferencePlane ? -0.6 : 0;
+  const refPlaneZ = currentScene?.sceneGraph?.nodes?.["plane-reference"]?.transform?.position?.z ?? -1.2;
+  const positionZ = isReferencePlane ? refPlaneZ : 0;
 
   if (!photoTexture) {
     return null;

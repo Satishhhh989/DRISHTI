@@ -163,11 +163,15 @@ const SingleHumanMesh: React.FC<HumanMeshProps> = ({
           ? (isWireframe ? "#60a5fa" : "#93c5fd")
           : (isWireframe ? "#94a3b8" : "#cbd5e1");
 
+        const hasVertexColors = Boolean(mesh.geometry?.attributes?.color);
         mesh.material = new THREE.MeshStandardMaterial({
-          color: new THREE.Color(color),
+          color: isWireframe
+            ? new THREE.Color(color)
+            : (hasVertexColors && !isSelected ? new THREE.Color(0xffffff) : new THREE.Color(color)),
+          vertexColors: !isWireframe && hasVertexColors && !isSelected,
           wireframe: isWireframe,
-          roughness: 0.55,
-          metalness: 0.08,
+          roughness: 0.65,
+          metalness: 0.05,
           side: THREE.DoubleSide,
         });
       }

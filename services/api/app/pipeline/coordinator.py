@@ -947,7 +947,7 @@ class PipelineCoordinator:
                                     up="+Y", forward="+Z", right="+X", units="meters"
                                 ),
                                 transform=entity_transform,
-                                texture_availability="none",
+                                texture_availability=rec_result.texture_availability,
                                 quality_score=rec_result.quality_score,
                                 quality_preset=rec_result.quality_preset,
                                 reprojection_error_pixels=rec_result.reprojection_error_pixels,

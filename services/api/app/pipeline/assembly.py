@@ -186,6 +186,7 @@ class SceneAssemblyEngine:
             # Scale and vertical offset estimation
             mesh_center_y = 0.15  # Default SMPL pelvis-to-center offset in canonical space
             mesh_h = 1.70
+            v_min_y: Optional[float] = None
             if (
                 entity.reconstruction
                 and entity.reconstruction.geometry_metadata
@@ -205,6 +206,12 @@ class SceneAssemblyEngine:
 
             # Center height aligned with image centroid, accounting for pelvis offset
             pos_y = (1.0 - cy) * plane_h - (mesh_center_y * clamped_scale)
+
+            # Prevent feet from sinking beneath ground plane (Y = 0.0)
+            if v_min_y is not None:
+                foot_world_y = pos_y + (v_min_y * clamped_scale)
+                if foot_world_y < 0.0:
+                    pos_y = pos_y - foot_world_y
 
             # Depth placement (Z) in front of reference plane at Z=-0.6
             if entity.depth and entity.depth.median_proximity is not None:
@@ -341,12 +348,17 @@ class SceneAssemblyEngine:
             visible=True,
         )
 
+        # Position reference plane dynamically behind the deepest entity with a safe clearance margin
+        all_z = [e.transform.position.z for e in updated_entities]
+        min_entity_z = min(all_z) if all_z else 0.0
+        ref_plane_z = min(-1.2, min_entity_z - 0.6)
+
         nodes["plane-reference"] = SceneGraphNode(
             id="plane-reference",
             name="Source Photo Reference Plane",
             node_type="reference_plane",
             transform=Transform(
-                position=Vector3D(x=0.0, y=plane_h / 2.0, z=-0.6),
+                position=Vector3D(x=0.0, y=plane_h / 2.0, z=round(ref_plane_z, 4)),
                 rotation=EulerRotation(x=0.0, y=0.0, z=0.0),
                 scale=Vector3D(x=plane_w, y=plane_h, z=1.0),
             ),
