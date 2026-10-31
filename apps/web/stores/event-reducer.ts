@@ -249,7 +249,8 @@ export function reduceProcessingEvent<T extends ReducerState>(
                   animationState: {
                     ...entity.animationState,
                     currentClip: entity.animationState?.currentClip || "idle_breathing",
-                    isPlaying: true,
+                    // Default to false: reconstructed 3D characters preserve the static photograph pose by default. Animation is strictly opt-in.
+                    isPlaying: false,
                   },
                 };
               }

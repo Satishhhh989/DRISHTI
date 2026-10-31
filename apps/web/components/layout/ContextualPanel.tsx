@@ -902,9 +902,24 @@ export const ContextualPanel: React.FC = () => {
                   </div>
                 )}
                 <div className={styles.propRow}>
-                  <span className={styles.propLabel}>Texture</span>
-                  <span className={styles.propValue} style={{ fontSize: "10px" }}>
-                    Neutral Clay (Geometry only)
+                  <span className={styles.propLabel}>Appearance</span>
+                  <span
+                    className={styles.propValue}
+                    style={{
+                      fontSize: "10px",
+                      color:
+                        selectedEntity.reconstruction.textureAvailability === "partial" ||
+                        selectedEntity.reconstruction.textureAvailability === "full"
+                          ? "#10b981"
+                          : "#9ca3af",
+                    }}
+                    data-testid="reconstruction-texture-availability"
+                  >
+                    {selectedEntity.reconstruction.textureAvailability === "partial"
+                      ? "Projected Vertex Colors (Photo)"
+                      : selectedEntity.reconstruction.textureAvailability === "full"
+                      ? "Full UV Texture"
+                      : "Neutral Fallback (Untextured)"}
                   </span>
                 </div>
               </>

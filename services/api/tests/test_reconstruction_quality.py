@@ -1234,4 +1234,42 @@ def test_projective_vertex_colors_and_dynamic_reference_plane():
     assert min_entity_z - ref_plane_z >= 0.5, "At least 0.5m clearance behind deepest person"
 
 
+# ---------------------------------------------------------------------------
+# 33. Segmentation mask guard & robust skeleton model resolution
+# ---------------------------------------------------------------------------
+def test_segmentation_mask_guard_and_skeleton_model_resolution():
+    """Verifies that segmentation mask prevents background bleed and SMPL models resolve robustly."""
+    from app.pipeline.reconstructor import compute_projected_vertex_colors
+    from app.pipeline.motion import skeleton_fitter, rigging_engine
+    from app.schemas.scene import AnimationState
+
+    # 1. Animation state default must be static (isPlaying = False)
+    anim_state = AnimationState()
+    assert anim_state.is_playing is False, "Default reconstructed pose must be static, not animated"
+
+    # 2. Skeleton fitter and rigging engine must have resolved SMPL NPZ
+    assert skeleton_fitter._j_regressor is not None, "SkeletonFitter must resolve genuine SMPL J_regressor"
+    assert rigging_engine._smpl_weights is not None, "RiggingEngine must resolve genuine SMPL skinning weights"
+    assert skeleton_fitter._j_regressor.shape == (24, 6890)
+    assert rigging_engine._smpl_weights.shape == (6890, 24)
+
+    # 3. Test background pixel bleed prevention via segmentation mask
+    # Crop is mostly black (0,0,0) with a central red patch (220, 20, 20)
+    crop_rgb = np.zeros((128, 128, 3), dtype=np.uint8)
+    crop_rgb[40:88, 40:88] = [220, 20, 20] # Person is in center
+    mask_gray = np.zeros((128, 128), dtype=np.uint8)
+    mask_gray[40:88, 40:88] = 255 # Mask covers central patch
+
+    # Vertex projecting outside the mask into the black background
+    # Three.js (X=0.9, Y=0.9) maps to corner of crop where mask=0 and crop=(0,0,0)
+    verts = np.array([[0.9, 0.9, 0.0]], dtype=np.float32)
+    normals = np.array([[0.0, 0.0, 1.0]], dtype=np.float32)
+    cam = {"scale": 1.0, "tx": 0.0, "ty": 0.0}
+
+    # With mask guard: outside vertex receives representative foreground color (red)
+    vc_guarded = compute_projected_vertex_colors(verts, normals, cam, crop_rgb, mask_gray=mask_gray)
+    assert vc_guarded[0, 0] > 150, "Mask guard must replace background black with representative foreground red"
+
+
+
 

@@ -159,20 +159,27 @@ const SingleHumanMesh: React.FC<HumanMeshProps> = ({
     modelGroup.traverse((child) => {
       if ((child as THREE.Mesh).isMesh) {
         const mesh = child as THREE.Mesh;
-        const color = isSelected
-          ? (isWireframe ? "#60a5fa" : "#93c5fd")
-          : (isWireframe ? "#94a3b8" : "#cbd5e1");
-
         const hasVertexColors = Boolean(mesh.geometry?.attributes?.color);
+
+        // Honest appearance preservation:
+        // Never obscure reconstructed vertex colors with a solid opaque blue material upon selection.
+        // Instead, preserve all photograph-projected vertex colors and signal selection via a luminous emissive rim.
+        const wireColor = isSelected ? "#60a5fa" : "#94a3b8";
+        const fallbackClayColor = "#cbd5e1"; // Neutral matte studio clay
+
         mesh.material = new THREE.MeshStandardMaterial({
           color: isWireframe
-            ? new THREE.Color(color)
-            : (hasVertexColors && !isSelected ? new THREE.Color(0xffffff) : new THREE.Color(color)),
-          vertexColors: !isWireframe && hasVertexColors && !isSelected,
+            ? new THREE.Color(wireColor)
+            : hasVertexColors
+            ? new THREE.Color(0xffffff)
+            : new THREE.Color(fallbackClayColor),
+          vertexColors: !isWireframe && hasVertexColors,
           wireframe: isWireframe,
           roughness: 0.65,
           metalness: 0.05,
           side: THREE.DoubleSide,
+          emissive: isSelected ? new THREE.Color("#2563eb") : new THREE.Color(0x000000),
+          emissiveIntensity: isSelected ? 0.35 : 0.0,
         });
       }
     });

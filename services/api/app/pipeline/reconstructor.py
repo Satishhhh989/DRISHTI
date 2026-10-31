@@ -156,12 +156,14 @@ def compute_projected_vertex_colors(
     camera_params: Dict[str, float],
     crop_rgb: np.ndarray,
     mask_gray: Optional[Union[bytes, np.ndarray]] = None,
+    transform_meta: Optional[Dict[str, Any]] = None,
 ) -> np.ndarray:
     """Projects photograph crop RGB colors onto 3D human mesh vertices.
     
     Uses weak-perspective camera projection (scale, tx, ty) to sample colors from the
     cropped person photograph, blending front-facing camera projections smoothly onto
     back-facing surfaces with diffuse ambient lighting and hair preservation.
+    Guarded by segmentation mask to prevent background pixels from bleeding onto body surfaces.
     
     Args:
         vertices_three: (N, 3) vertices in Three.js coordinates (+X right, +Y up, +Z out)
@@ -169,6 +171,7 @@ def compute_projected_vertex_colors(
         camera_params: Dict with 'scale', 'tx', 'ty' from HMR/SPIN regressor
         crop_rgb: (H, W, 3) cropped person image array (uint8)
         mask_gray: Optional person segmentation alpha mask
+        transform_meta: Optional transform metadata with crop coordinates and square dimensions
         
     Returns:
         (N, 4) uint8 RGBA vertex color array
@@ -194,6 +197,40 @@ def compute_projected_vertex_colors(
 
     # Sample direct front projection colors from crop
     front_colors = crop_rgb[py, px].astype(np.float32)
+
+    # Segmentation mask guard: prevent background pixels from bleeding onto mesh surfaces
+    if mask_gray is not None:
+        try:
+            if isinstance(mask_gray, bytes):
+                full_mask = cv2.imdecode(np.frombuffer(mask_gray, np.uint8), cv2.IMREAD_GRAYSCALE)
+            else:
+                full_mask = np.asarray(mask_gray, dtype=np.uint8)
+
+            if full_mask is not None and full_mask.size > 0:
+                if transform_meta and "crop_pixels" in transform_meta:
+                    cx1, cy1, cx2, cy2 = transform_meta["crop_pixels"]
+                    off_x, off_y = transform_meta.get("offset", [0, 0])
+                    sq_dim = transform_meta.get("square_dim", max(w_crop, h_crop))
+                    m_crop = full_mask[cy1:cy2, cx1:cx2]
+                    if m_crop.size > 0:
+                        sq_mask = np.zeros((sq_dim, sq_dim), dtype=np.uint8)
+                        sq_mask[off_y:off_y + m_crop.shape[0], off_x:off_x + m_crop.shape[1]] = m_crop
+                        mask_crop = cv2.resize(sq_mask, (w_crop, h_crop), interpolation=cv2.INTER_NEAREST)
+                    else:
+                        mask_crop = None
+                elif full_mask.shape[:2] == (h_crop, w_crop):
+                    mask_crop = full_mask
+                else:
+                    mask_crop = cv2.resize(full_mask, (w_crop, h_crop), interpolation=cv2.INTER_NEAREST)
+
+                if mask_crop is not None:
+                    is_in_mask = mask_crop[py, px] > 64
+                    fg_pixels = crop_rgb[mask_crop > 64]
+                    if len(fg_pixels) > 0 and np.any(~is_in_mask):
+                        rep_clothing = np.median(fg_pixels, axis=0).astype(np.float32)
+                        front_colors[~is_in_mask] = rep_clothing
+        except Exception as e:
+            logger.debug(f"Segmentation mask guard for vertex colors: {e}")
 
     # Sigmoidal front-to-back blend factor based on camera-facing normal component
     # nz_cv < 0: front-facing (facing camera), nz_cv > 0: back-facing
@@ -1345,6 +1382,7 @@ class SpinHumanReconstructor(HumanReconstructor):
             camera_params=camera_params,
             crop_rgb=crop_img,
             mask_gray=mask_gray,
+            transform_meta=transform_meta,
         )
 
         glb_bytes = export_mesh_glb(
@@ -1614,6 +1652,7 @@ class Hmr2HumanReconstructor(HumanReconstructor):
             camera_params=camera_params,
             crop_rgb=crop_rgb,
             mask_gray=mask_gray,
+            transform_meta=transform_meta,
         )
 
         glb_bytes = export_mesh_glb(

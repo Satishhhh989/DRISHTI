@@ -12,7 +12,19 @@ import urllib.request
 from app.core.config import settings
 from app.core.logging import logger
 
-DEFAULT_MODELS_DIR = Path("./data/models").resolve()
+def _resolve_default_models_dir() -> Path:
+    p_cwd = Path("./data/models").resolve()
+    if p_cwd.exists():
+        return p_cwd
+    try:
+        p_file = (Path(__file__).resolve().parents[4] / "data" / "models").resolve()
+        if p_file.exists():
+            return p_file
+    except IndexError:
+        pass
+    return p_cwd
+
+DEFAULT_MODELS_DIR = _resolve_default_models_dir()
 
 # Pretrained model catalog for Phase 02 and Phase 03
 MODEL_CATALOG: Dict[str, Dict[str, Any]] = {

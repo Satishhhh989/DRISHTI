@@ -16,6 +16,7 @@ import numpy as np
 
 from app.core.logging import logger
 from app.pipeline.assembly import compute_2d_iou
+from app.pipeline.models import DEFAULT_MODELS_DIR
 from app.schemas.common import BoundingBox2D, Transform
 from app.schemas.scene import (
     AnimationClipData,
@@ -826,7 +827,8 @@ class ProceduralAnimationEngine:
 
 
 # Module singletons
-skeleton_fitter = SkeletonFitter(Path("./data/models/human_reconstruction/SMPL_N_model.npz"))
-rigging_engine = RiggingEngine(Path("./data/models/human_reconstruction/SMPL_N_model.npz"))
+_smpl_model_path = (DEFAULT_MODELS_DIR / "human_reconstruction" / "SMPL_N_model.npz").resolve()
+skeleton_fitter = SkeletonFitter(_smpl_model_path if _smpl_model_path.exists() else None)
+rigging_engine = RiggingEngine(_smpl_model_path if _smpl_model_path.exists() else None)
 procedural_animation_engine = ProceduralAnimationEngine()
 
